@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Super Earth Watch — Galactic War Command</title>
+<meta name="description" content="A live Helldivers 2 galactic war dashboard: Major Orders, the galactic map, war statistics and dispatches from Super Earth High Command.">
+<meta name="theme-color" content="#05070b">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%2305070b'/><path d='M16 4l3.6 7.6 8.4 1.1-6.1 5.8 1.5 8.3L16 22.9 8.6 26.8l1.5-8.3L4 12.7l8.4-1.1z' fill='%23f5c518'/></svg>">
+<link rel="stylesheet" href="css/styles.css">
+
+<!-- Webfonts load out of band. A render-blocking <link> to a third party means
+     a slow or filtered CDN stalls script execution with it, and the dashboard
+     sits blank until the request gives up; this way the page paints immediately
+     in the condensed/mono fallback stacks and upgrades when the fonts arrive. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'; this.onload=null"
+      href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<noscript>
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap">
+</noscript>
+</head>
+<body class="is-booting">
+
+<div class="crt" aria-hidden="true"></div>
+
+<header class="masthead">
+  <div class="masthead__brand">
+    <span class="masthead__sigil" aria-hidden="true">
+      <svg viewBox="0 0 32 32" width="30" height="30">
+        <path d="M16 2.5l3.9 8.2 9 1.2-6.6 6.2 1.7 8.9L16 22.6 7.9 27l1.7-8.9L3 11.9l9-1.2z"
+              fill="currentColor"/>
+      </svg>
+    </span>
+    <div class="masthead__titles">
+      <h1 class="masthead__title">SUPER EARTH WATCH</h1>
+      <p class="masthead__sub">GALACTIC WAR COMMAND · MINISTRY OF TRUTH BROADCAST</p>
+    </div>
+  </div>
+
+  <div class="masthead__controls">
+    <div class="toggle" id="source-toggle" role="group" aria-label="Data source">
+      <button type="button" class="toggle__btn" data-source="live" aria-pressed="true">LIVE</button>
+      <button type="button" class="toggle__btn" data-source="mock" aria-pressed="false">ARCHIVE</button>
+    </div>
+    <button type="button" class="btn btn--icon" id="refresh-now" title="Force refresh (R)">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+        <path d="M20 11a8 8 0 10-2.3 5.7M20 5v6h-6" fill="none" stroke="currentColor"
+              stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span class="sr-only">Force refresh</span>
+    </button>
+  </div>
+</header>
+
+<div class="status" id="status-bar" data-status="boot" role="status" aria-live="polite"></div>
+
+<section id="outage" class="outage" hidden aria-live="assertive"></section>
+
+<main class="shell">
+
+  <!-- 1. Major Order ------------------------------------------------------ -->
+  <section id="major-order" class="major-order" aria-label="Current Major Order"></section>
+
+  <div class="grid">
+
+    <!-- 2. Galactic map -------------------------------------------------- -->
+    <section class="panel panel--map" aria-label="Galactic map">
+      <header class="panel__head">
+        <h2 class="panel__title">GALACTIC MAP</h2>
+        <div class="map__tools">
+          <span class="map__zoom mono" id="zoom-readout">1.00×</span>
+          <button type="button" class="btn btn--tiny" id="map-zoom-out" aria-label="Zoom out">−</button>
+          <button type="button" class="btn btn--tiny" id="map-zoom-in" aria-label="Zoom in">+</button>
+          <button type="button" class="btn btn--tiny" id="map-reset">RESET</button>
+        </div>
+      </header>
+
+      <div class="map">
+        <canvas id="galaxy" tabindex="0"
+                aria-label="Galactic map of the Helldivers 2 war. Use arrow keys to pan, plus and minus to zoom."></canvas>
+        <div class="tip" id="map-tooltip" hidden></div>
+        <div class="map__legend">
+          <span><i style="background:#3d8bff"></i>Super Earth</span>
+          <span><i style="background:#ffa41f"></i>Terminids</span>
+          <span><i style="background:#ff4444"></i>Automatons</span>
+          <span><i style="background:#a271ff"></i>Illuminate</span>
+        </div>
+        <p class="map__hint">DRAG TO PAN · SCROLL TO ZOOM · CLICK A WORLD</p>
+      </div>
+    </section>
+
+    <!-- 3. Planet detail / active fronts ---------------------------------- -->
+    <aside id="planet-panel" class="panel panel--planet" aria-label="Planet details"></aside>
+
+    <!-- 4 & 5. Stats and dispatches -------------------------------------- -->
+    <section class="panel panel--intel" aria-label="War intelligence">
+      <div class="tabs" role="tablist" aria-label="Intelligence sections">
+        <button type="button" class="tabs__btn is-active" data-tab="stats"
+                role="tab" aria-selected="true">WAR STATS</button>
+        <button type="button" class="tabs__btn" data-tab="dispatches"
+                role="tab" aria-selected="false">DISPATCHES</button>
+      </div>
+
+      <div class="panel__scroll" data-pane="stats" role="tabpanel">
+        <div id="war-stats"></div>
+      </div>
+
+      <div class="panel__scroll" data-pane="dispatches" role="tabpanel" hidden>
+        <ol id="dispatch-feed" class="dispatches"></ol>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<footer class="footer">
+  <p>
+    Data from the <a href="https://helldivers-2.github.io/api/" target="_blank" rel="noopener">Helldivers 2 community API</a>.
+    Unofficial fan project — not affiliated with Arrowhead Game Studios or Sony.
+  </p>
+  <p class="footer__slogan">FREEDOM · DEMOCRACY · MANAGED PROSPERITY</p>
+</footer>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
