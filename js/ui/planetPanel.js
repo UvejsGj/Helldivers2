@@ -11,6 +11,7 @@ import { FACTIONS, faction } from '../config.js';
 import { selectPlanet, state, subscribe } from '../state.js';
 import { compact, countdown, escapeHtml, full, percent, relativeTime } from '../format.js';
 import { focusPlanet } from './map.js';
+import { formatRate, projectionFor } from '../trend.js';
 
 const root = document.getElementById('planet-panel');
 let tickTimer = null;
@@ -83,7 +84,9 @@ function planetHtml(planet) {
           <div class="pp__bar-fill" style="width:${Math.max(0, Math.min(100, barValue))}%;background:${barColour}"></div>
         </div>
         <div class="pp__bar-foot mono">
-          <span>${full(planet.health)} / ${full(planet.maxHealth)} HP</span>
+          <span>${event
+            ? `${full(event.health)} / ${full(event.maxHealth)} HP held`
+            : `${full(planet.health)} / ${full(planet.maxHealth)} HP`}</span>
           ${planet.regenPerSecond
             ? `<span title="Enemy reinforcement: health this planet recovers per hour">
                  +${compact(planet.regenPerSecond * 3600)} HP/hr regen</span>`
@@ -91,6 +94,7 @@ function planetHtml(planet) {
         </div>
       </div>
 
+      ${active ? trendHtml(planet) : ''}
       ${event ? eventHtml(event) : ''}
 
       <dl class="pp__stats">
@@ -112,6 +116,69 @@ function planetHtml(planet) {
       ${hazards}
       ${supplyHtml(planet)}
     </div>`;
+}
+
+/**
+ * Rate of advance and what it implies.
+ *
+ * Deliberately says "measuring" rather than guessing when the observation
+ * window is too short — a confident-looking ETA drawn from four minutes of
+ * data would be worse than no ETA at all.
+ */
+function trendHtml(planet) {
+  const projection = projectionFor(planet);
+
+  if (!projection) {
+    return `
+      <div class="trend trend--waiting">
+        <span class="trend__label">RATE OF ADVANCE</span>
+        <span class="trend__value mono">MEASURING…</span>
+        <p class="trend__note">Needs a few more polls before a rate can be read.</p>
+      </div>`;
+  }
+
+  const rate = formatRate(projection);
+  const tone = projection.stalled ? 'stalled' : projection.losing ? 'bad' : 'good';
+
+  let verdict;
+  if (projection.kind === 'defence') {
+    if (projection.onTrack === null) verdict = 'No deadline reported for this assault.';
+    else if (projection.onTrack) {
+      verdict = `Holding. On pace to repel with ${formatHours(projection.hoursLeft - (projection.etaHours ?? 0))} to spare.`;
+    } else if (projection.losing) {
+      verdict = 'Ground is being lost. This planet falls unless reinforced.';
+    } else if (projection.stalled) {
+      verdict = 'The line is not moving. This planet falls unless reinforced.';
+    } else {
+      verdict = `Too slow — projected ${projection.projected.toFixed(0)}% at expiry. Reinforcements needed.`;
+    }
+  } else if (projection.losing) {
+    verdict = 'Ground is being lost faster than it is taken.';
+  } else if (projection.stalled) {
+    verdict = 'Liberation has stalled at this pace.';
+  } else {
+    verdict = `Liberated in about ${formatHours(projection.etaHours)} at this pace.`;
+  }
+
+  return `
+    <div class="trend trend--${tone}">
+      <span class="trend__label">RATE OF ADVANCE</span>
+      <span class="trend__value mono">${escapeHtml(rate)}</span>
+      <p class="trend__note">${escapeHtml(verdict)}</p>
+      <p class="trend__basis mono">observed over ${formatHours(projection.spanHours)} · ${projection.samples} samples</p>
+    </div>`;
+}
+
+/** Compact duration for projections: "3h 20m", "45m", "2d 4h". */
+function formatHours(hours) {
+  if (!Number.isFinite(hours) || hours < 0) return '—';
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m`;
+  if (hours < 48) {
+    const whole = Math.floor(hours);
+    const minutes = Math.round((hours - whole) * 60);
+    return minutes ? `${whole}h ${minutes}m` : `${whole}h`;
+  }
+  return `${Math.floor(hours / 24)}d ${Math.round(hours % 24)}h`;
 }
 
 function eventHtml(event) {
@@ -145,6 +212,14 @@ function supplyHtml(planet) {
           </button>`).join('')}
       </div>
     </div>`;
+}
+
+/** Small signed rate beside the percentage, omitted until it means something. */
+function rateChip(planet) {
+  const projection = projectionFor(planet);
+  if (!projection || projection.stalled) return '';
+  const tone = projection.losing ? 'bad' : 'good';
+  return `<span class="front__rate front__rate--${tone}">${escapeHtml(formatRate(projection))}</span>`;
 }
 
 function stat(label, value) {
@@ -188,7 +263,9 @@ function campaignListHtml() {
                     <span class="front__faction" style="color:${info.color}">
                       ${defending ? 'DEFEND' : 'LIBERATE'} · ${escapeHtml(info.label)}
                     </span>
-                    <span class="mono">${percent(planet.liberation)}</span>
+                    <span class="front__numbers mono">
+                      ${rateChip(planet)}<span>${percent(planet.liberation)}</span>
+                    </span>
                   </span>
                   <span class="front__track">
                     <span class="front__fill" style="width:${Math.min(100, planet.liberation)}%;

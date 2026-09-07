@@ -43,7 +43,9 @@ export function setSource(next) {
   try { localStorage.setItem(STORAGE_KEY, next); } catch { /* not fatal */ }
   cache.clear();
   unreachableUntil = 0;
-  consecutiveNetworkFailures = 0;
+  headerlessFailures = 0;
+  restoredAt = null;
+  lastSnapshotWrite = 0;
 }
 
 /* ----------------------------------------------------------------- cache */
@@ -57,6 +59,102 @@ const inFlight = new Map();
 
 export function peek(key) {
   return cache.get(key) || null;
+}
+
+/* ------------------------------------------------------ snapshot persistence
+
+   The in-memory cache dies with the tab, so a cold start during an outage has
+   nothing to show. Mirroring each successful payload to localStorage means a
+   returning user sees the war as of their last visit — clearly marked stale —
+   instead of an empty screen.
+
+   Writes are throttled and wrapped: serialising the planet list costs real
+   main-thread time, and storage can be full or blocked outright.            */
+
+const SNAPSHOT_KEY = 'sew:snapshot';
+/** Older than this and the war has moved on too far to be worth restoring. */
+const SNAPSHOT_MAX_AGE = 7 * 24 * 3600_000;
+const SNAPSHOT_WRITE_INTERVAL = 60_000;
+
+let lastSnapshotWrite = 0;
+let restoredAt = null;
+
+/** When the visible data came from storage rather than the network. */
+export const restoredFrom = () => restoredAt;
+
+/**
+ * Load the stored snapshot into the cache as stale entries.
+ *
+ * Entries are marked `stale` with their original `fetchedAt`, so the status bar
+ * reports the true age and the very next poll replaces them.
+ */
+export function hydrateFromStorage() {
+  if (source === 'mock') return null;
+  let raw;
+  try {
+    raw = localStorage.getItem(SNAPSHOT_KEY);
+  } catch {
+    return null; // storage blocked; nothing to restore
+  }
+  if (!raw) return null;
+
+  let snapshot;
+  try {
+    snapshot = JSON.parse(raw);
+  } catch {
+    // Corrupt or truncated (a quota failure mid-write). Drop it.
+    try { localStorage.removeItem(SNAPSHOT_KEY); } catch { /* ignore */ }
+    return null;
+  }
+
+  const savedAt = Number(snapshot?.savedAt) || 0;
+  if (!savedAt || Date.now() - savedAt > SNAPSHOT_MAX_AGE) return null;
+  if (!snapshot.feeds || typeof snapshot.feeds !== 'object') return null;
+
+  let restored = 0;
+  for (const [key, entry] of Object.entries(snapshot.feeds)) {
+    if (!ENDPOINTS[key] || !entry || entry.data === undefined) continue;
+    cache.set(key, {
+      data: entry.data,
+      fetchedAt: Number(entry.fetchedAt) || savedAt,
+      stale: true,
+      error: null,
+    });
+    restored += 1;
+  }
+
+  if (!restored) return null;
+  restoredAt = savedAt;
+  return savedAt;
+}
+
+/**
+ * Mirror the current cache to storage. Best effort — never throws.
+ *
+ * Called once per completed refresh, not per successful fetch: the endpoints
+ * resolve seconds apart, so a per-fetch throttle would let the first feed
+ * through and drop the other five, storing a snapshot that restores almost
+ * nothing.
+ */
+export function persistSnapshot() {
+  if (source === 'mock') return;
+  if (Date.now() - lastSnapshotWrite < SNAPSHOT_WRITE_INTERVAL) return;
+
+  const feeds = {};
+  for (const [key, entry] of cache.entries()) {
+    if (!entry.data || entry.error) continue;
+    feeds[key] = { data: entry.data, fetchedAt: entry.fetchedAt };
+  }
+  if (!Object.keys(feeds).length) return;
+
+  lastSnapshotWrite = Date.now();
+  try {
+    localStorage.setItem(SNAPSHOT_KEY, JSON.stringify({ savedAt: Date.now(), feeds }));
+  } catch {
+    // Almost always QuotaExceededError. Clear our own key and give up until
+    // the next interval rather than retrying into a full store.
+    try { localStorage.removeItem(SNAPSHOT_KEY); } catch { /* ignore */ }
+  }
 }
 
 /* ------------------------------------------------------- request queueing */
@@ -174,33 +272,73 @@ async function httpGet(path, { withHeaders = true, signal } = {}) {
  * poll always gets a real attempt and recovery is automatic.
  */
 let unreachableUntil = 0;
-let consecutiveNetworkFailures = 0;
 const BREAKER_WINDOW = 5_000;
 /** Two failures in a row rules out a single transient blip. */
 const BREAKER_THRESHOLD = 2;
 
-/** Record the outcome of one attempt and trip the breaker when warranted. */
-function noteAttempt(error) {
-  if (!error) {
-    consecutiveNetworkFailures = 0;
-    unreachableUntil = 0;
+/**
+ * Header state, and why it is global rather than per-request.
+ *
+ * The X-Super-* identification headers make every request non-simple, so the
+ * browser sends a CORS preflight first. If the API declines that OPTIONS, every
+ * endpoint fails at the network layer — indistinguishable from being offline.
+ *
+ * The breaker must therefore never conclude "host unreachable" until a
+ * *headerless* attempt has also failed, or a rejected preflight would look like
+ * a total outage and the fallback would never get to run. Dropping the headers
+ * is global so one endpoint's discovery serves all six, rather than each
+ * rediscovering it against a breaker that has already tripped.
+ */
+let useHeaders = true;
+/** Set once a headerless request succeeds: the preflight really is the problem. */
+let headersProvenBad = false;
+/** Consecutive network failures seen with the headers already off. */
+let headerlessFailures = 0;
+
+function unreachableError() {
+  const error = new ApiError('API unreachable', { status: 0, retryable: false });
+  // Synthetic: raised by the breaker, not by a request. It must not feed the
+  // failure counters, or the breaker would keep re-arming itself.
+  error.synthetic = true;
+  return error;
+}
+
+/** A network-level failure. Decide whether it indicts the headers or the host. */
+function noteFailure(error) {
+  // An HTTP status means we reached the server: not a reachability problem.
+  if (error.status !== 0) return;
+
+  if (useHeaders) {
+    useHeaders = false;
+    headerlessFailures = 0;
+    console.warn(
+      '[super-earth-watch] dropping X-Super-* headers and retrying — '
+      + 'the API appears to reject the CORS preflight',
+    );
     return;
   }
-  if (error.status !== 0) return;
-  consecutiveNetworkFailures += 1;
-  if (consecutiveNetworkFailures >= BREAKER_THRESHOLD) {
+
+  headerlessFailures += 1;
+  if (headerlessFailures >= BREAKER_THRESHOLD) {
     unreachableUntil = Date.now() + BREAKER_WINDOW;
   }
 }
 
+function noteSuccess() {
+  // Headers off and the request went through: the preflight was the problem.
+  if (!useHeaders) headersProvenBad = true;
+  headerlessFailures = 0;
+  unreachableUntil = 0;
+}
+
+/** True when this client had to give up identifying itself. */
+export const isAnonymous = () => headersProvenBad;
+
 /** HTTP with retry/backoff, plus the one-shot no-headers fallback. */
 async function fetchWithRetry(path, signal) {
-  if (Date.now() < unreachableUntil) {
-    throw new ApiError('API unreachable', { status: 0, retryable: false });
-  }
+  if (Date.now() < unreachableUntil) throw unreachableError();
 
   let lastError;
-  let allowHeaders = true;
 
   for (let attempt = 0; attempt < RETRY.attempts; attempt++) {
     try {
@@ -208,24 +346,20 @@ async function fetchWithRetry(path, signal) {
         // Re-check inside the queued task, not just on entry: all six endpoints
         // are queued up front, so by the time this one's turn comes round an
         // earlier endpoint may already have proved the host unreachable.
-        if (Date.now() < unreachableUntil) {
-          throw new ApiError('API unreachable', { status: 0, retryable: false });
-        }
-        return httpGet(path, { withHeaders: allowHeaders, signal });
+        if (Date.now() < unreachableUntil) throw unreachableError();
+        // Read useHeaders here rather than at attempt time: another endpoint
+        // may have dropped the headers while this request sat in the queue.
+        return httpGet(path, { withHeaders: useHeaders, signal });
       });
-      noteAttempt(null);
+      noteSuccess();
       return result;
     } catch (error) {
       lastError = error;
-      noteAttempt(error);
+      if (!error.synthetic) noteFailure(error);
       if (!error.retryable) throw error;
       // The host is unreachable; stop spending retries on this endpoint.
       if (Date.now() < unreachableUntil) break;
       if (attempt === RETRY.attempts - 1) break;
-
-      // A network-level failure on the first attempt is the CORS-preflight
-      // signature; drop the custom headers for the remaining attempts.
-      if (error.status === 0 && allowHeaders) allowHeaders = false;
 
       const backoff = Math.min(RETRY.maxDelay, RETRY.baseDelay * 2 ** attempt);
       await sleep(error.retryAfter ?? backoff);
@@ -262,6 +396,8 @@ export async function get(key, { force = false, signal } = {}) {
         : await fetchWithRetry(endpoint.path, signal);
       const fresh = { data, fetchedAt: Date.now(), stale: false, error: null };
       cache.set(key, fresh);
+      // Live data supersedes anything restored from storage.
+      restoredAt = null;
       return fresh;
     } catch (error) {
       // Preserve the last good payload; mark it stale so the UI can say so.
@@ -301,6 +437,10 @@ function mockRequest(key) {
  * sitting blank until the whole set lands.
  */
 export function startAll(options = {}) {
+  // Re-arm identification for each cycle: a network blip should not cost us the
+  // headers for the rest of the session, only a preflight we know is refused.
+  if (!headersProvenBad) useHeaders = true;
+
   const keys = REFRESH_ORDER.filter((key) => ENDPOINTS[key]);
   // Anything added to ENDPOINTS but missing from REFRESH_ORDER still gets run.
   for (const key of Object.keys(ENDPOINTS)) if (!keys.includes(key)) keys.push(key);

@@ -1,0 +1,12 @@
+{
+  "name": "super-earth-watch",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A live Helldivers 2 Galactic War dashboard.",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "start": "python3 -m http.server 8000"
+  },
+  "license": "MIT"
+}

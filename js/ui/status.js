@@ -7,7 +7,7 @@
  * cold start with no data at all gets the full "war data unavailable" screen.
  */
 
-import { getSource, setSource } from '../api.js';
+import { getSource, isAnonymous, setSource } from '../api.js';
 import { refresh, state, subscribe } from '../state.js';
 import { ENDPOINTS, POLL_INTERVAL } from '../config.js';
 import { escapeHtml, relativeTime } from '../format.js';
@@ -25,10 +25,17 @@ const STATUS_TEXT = {
 };
 
 function render() {
-  const [label, detail] = STATUS_TEXT[state.status] || STATUS_TEXT.boot;
+  let [label, detail] = STATUS_TEXT[state.status] || STATUS_TEXT.boot;
   const failed = Object.entries(state.sources).filter(([, s]) => s && !s.ok).map(([key]) => key);
 
-  bar.dataset.status = state.status;
+  // Restored data is not a degraded live feed — it is a photograph. Say so,
+  // rather than implying these are current positions.
+  if (state.restoredFrom) {
+    label = 'LAST KNOWN POSITIONS';
+    detail = `Showing the war as of ${relativeTime(state.restoredFrom)}. Reconnecting…`;
+  }
+
+  bar.dataset.status = state.restoredFrom ? 'restored' : state.status;
   bar.innerHTML = `
     <div class="status__left">
       <span class="status__lamp" aria-hidden="true"></span>
@@ -42,6 +49,8 @@ function render() {
       </span>
       ${failed.length ? `<span class="status__failed" title="Failed feeds: ${escapeHtml(failed.join(', '))}">
         ${failed.length} FEED${failed.length === 1 ? '' : 'S'} DOWN</span>` : ''}
+      ${isAnonymous() ? `<span class="status__anon"
+        title="The API rejected the CORS preflight for the X-Super-* identification headers, so requests are being sent without them.">UNIDENTIFIED</span>` : ''}
     </div>`;
 
   renderOutage();
@@ -49,7 +58,9 @@ function render() {
 }
 
 function renderOutage() {
-  const isDown = state.status === 'down';
+  // With a restored snapshot on screen there is something to look at, so the
+  // full-page notice would be in the way; the status bar carries the warning.
+  const isDown = state.status === 'down' && !state.restoredFrom;
   outage.hidden = !isDown;
   if (!isDown) return;
 

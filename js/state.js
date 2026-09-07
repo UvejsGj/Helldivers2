@@ -6,6 +6,7 @@
 
 import * as api from './api.js';
 import { ENDPOINTS } from './config.js';
+import { recordSamples, setScope } from './trend.js';
 import {
   normalizeWar, normalizePlanet, normalizeCampaign, normalizeEvent,
   normalizeAssignment, normalizeDispatch, asArray,
@@ -27,6 +28,8 @@ export const state = {
   sources: {},
   lastUpdated: null,
   lastSuccessfulUpdate: null,
+  /** Epoch of the stored snapshot currently on screen, or null when live. */
+  restoredFrom: null,
   errors: [],
   /** Index of the planet shown in the detail panel, or null. */
   selectedPlanet: null,
@@ -74,6 +77,7 @@ export async function refresh({ force = false } = {}) {
   const settled = started.map(({ key, promise }) => promise.then((entry) => {
     recordSource(key, entry);
     applySlice(key);
+    if (!entry.error) state.restoredFrom = api.restoredFrom();
     updateInterimStatus();
     // Paint what just arrived. Views diff their own content, so an update that
     // changes nothing is cheap.
@@ -101,6 +105,10 @@ export async function refresh({ force = false } = {}) {
       }));
 
     state.lastUpdated = Date.now();
+
+    // One write per cycle, once every feed has had its turn, so the stored
+    // snapshot is a coherent picture rather than whichever feed landed first.
+    if (results.some(({ entry }) => !entry.error)) api.persistSnapshot();
 
     const haveCore = Boolean(state.war || state.planets.length);
     if (!haveCore) {
@@ -230,6 +238,29 @@ function rebuildPlanets() {
   state.campaignPlanets = planets
     .filter((p) => p.campaign || p.event)
     .sort((a, b) => b.players - a.players);
+
+  setScope(api.getSource());
+  recordSamples(state.campaignPlanets);
+}
+
+/**
+ * Seed the store from the last snapshot written to localStorage.
+ *
+ * Called once before the first refresh so an offline or cold start shows the
+ * war as it last stood rather than an empty outage screen.
+ */
+export function hydrate() {
+  const savedAt = api.hydrateFromStorage();
+  if (!savedAt) return false;
+
+  for (const key of Object.keys(ENDPOINTS)) applySlice(key);
+
+  state.restoredFrom = savedAt;
+  // Honest reporting: this data is as old as the snapshot, not as old as now.
+  state.lastSuccessfulUpdate = savedAt;
+  state.status = state.planets.length || state.war ? 'degraded' : 'boot';
+  notify('hydrate');
+  return true;
 }
 
 /* ------------------------------------------------------- derived selectors */

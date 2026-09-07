@@ -13,11 +13,21 @@ ES modules need to be served over HTTP — opening `index.html` from the filesys
 will not work, and the live API rejects requests from a `file://` origin anyway.
 
 ```sh
-python3 -m http.server 8000
+python3 -m http.server 8000     # or: npm start
 # then open http://localhost:8000
 ```
 
 Any static server does; there is nothing to compile.
+
+### Tests
+
+```sh
+npm test
+```
+
+Node's built-in test runner, no dependencies. Covers the parsing layer
+(`js/normalize.js`), the formatters and escaping (`js/format.js`) and the trend
+maths (`js/trend.js`) — the parts with real logic and no DOM.
 
 ### Data source
 
@@ -26,6 +36,7 @@ Any static server does; there is nothing to compile.
 | `/` | Live API, remembering whatever you last selected |
 | `/?live=1` | Force the live API for this visit |
 | `/?mock=1` | Force the offline dataset for this visit |
+| `/?planet=Meridia` | Open straight onto a planet (name, or index) |
 
 The **LIVE / ARCHIVE** toggle in the masthead switches at runtime and persists the
 choice in `localStorage`. Archive mode serves a generated galaxy from
@@ -82,14 +93,17 @@ index.html
 css/styles.css
 js/
   config.js       endpoints, TTLs, faction palette, rate-limit policy
-  api.js          fetch wrapper: cache, request queue, retries, circuit breaker
+  api.js          fetch wrapper: cache, queue, retries, breaker, snapshots
   mock.js         generated offline galaxy, in the API's own shapes
   normalize.js    defensive parsing + derived attacks and supply lines
+  trend.js        liberation rate over time, and what it projects
   state.js        one snapshot of the war + subscribe/notify bus
   format.js       number, countdown and dispatch formatting
-  app.js          bootstrap and the auto-refresh loop
+  app.js          bootstrap, auto-refresh loop, deep links
   ui/
     majorOrder.js  status.js  map.js  planetPanel.js  stats.js  dispatches.js
+test/
+  normalize.test.mjs  format.test.mjs  trend.test.mjs
 ```
 
 The data flows one way: `api` → `normalize` → `state` → views. Views subscribe to
@@ -117,11 +131,29 @@ drawn dashed and semi-transparent so reported fact is distinguishable from the
 app's arithmetic.
 
 **Outage handling.** A failed poll never blanks the dashboard: the cache keeps
-the last good payload and the status bar reports how stale it is. Only a cold
-start with no data at all shows the full "war data unavailable" screen, which
-reaches the screen in well under a second — a circuit breaker trips after two
-consecutive network-level failures so the remaining endpoints fail immediately
-rather than grinding through their retries.
+the last good payload and the status bar reports how stale it is. Each completed
+refresh also mirrors itself to `localStorage`, so even a cold start with the API
+down opens on the war as it last stood, labelled *LAST KNOWN POSITIONS* with its
+true age. Only a first-ever visit with no snapshot shows the full "war data
+unavailable" screen, and it gets there in well under a second: a circuit breaker
+trips after two consecutive network-level failures so the remaining endpoints
+fail immediately rather than grinding through their retries.
+
+**Identification vs. the breaker.** The `X-Super-*` headers make every request
+preflighted. If the API ever declines that `OPTIONS`, all six endpoints fail at
+the network layer — indistinguishable from being offline. So the headers are
+dropped *globally* on the first such failure and the breaker only concludes
+"host unreachable" after a headerless attempt has also failed; otherwise a
+rejected preflight would present as a total outage and the fallback would never
+run. When the client ends up unidentified the status bar says so.
+
+**Rate of advance.** The API reports a position, never a velocity, but the
+question players actually have is whether a planet will fall in time. `trend.js`
+keeps a short per-planet history of liberation percentages in `localStorage` and
+takes a least-squares slope over it — regression rather than first-versus-last,
+because campaigns genuinely stall and restart. Below three samples or twelve
+minutes of span it reports nothing at all rather than a confident-looking number
+drawn from noise.
 
 ## Map controls
 

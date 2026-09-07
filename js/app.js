@@ -8,9 +8,9 @@
  */
 
 import { POLL_INTERVAL } from './config.js';
-import { refresh, selectPlanet, state, subscribe } from './state.js';
+import { hydrate, refresh, selectPlanet, state, subscribe } from './state.js';
 import { initMajorOrder } from './ui/majorOrder.js';
-import { initMap } from './ui/map.js';
+import { focusPlanet, initMap } from './ui/map.js';
 import { initPlanetPanel } from './ui/planetPanel.js';
 import { initStats } from './ui/stats.js';
 import { initDispatches } from './ui/dispatches.js';
@@ -45,12 +45,68 @@ function bindLifecycle() {
   });
 }
 
+/* ------------------------------------------------------------- deep links
+
+   ?planet=Meridia (or an index) opens straight onto that world, and selecting
+   one rewrites the URL, so a view of a specific front is shareable. Matching is
+   by name because that is what someone would type or paste to a squadmate;
+   the index is accepted as a fallback.                                       */
+
+let deepLinkApplied = false;
+
+function findPlanet(token) {
+  if (!token) return null;
+  const wanted = decodeURIComponent(token).trim().toLowerCase();
+  if (!wanted) return null;
+
+  for (const planet of state.planets) {
+    if (planet.name.toLowerCase() === wanted) return planet;
+  }
+  // Numeric fallback, checked second so a planet literally named "12" wins.
+  if (/^\d+$/.test(wanted)) return state.planetsByIndex.get(Number(wanted)) || null;
+  return null;
+}
+
+/** Honour ?planet= once, as soon as there are planets to match against. */
+function applyDeepLink() {
+  if (deepLinkApplied || !state.planets.length) return;
+  const token = new URLSearchParams(location.search).get('planet');
+  if (!token) {
+    deepLinkApplied = true;
+    return;
+  }
+  const planet = findPlanet(token);
+  deepLinkApplied = true;
+  if (!planet) return;
+
+  selectPlanet(planet.index);
+  focusPlanet(planet.index, { zoom: 2.4 });
+}
+
+/** Keep the address bar in step with the selection, without adding history. */
+function syncDeepLink() {
+  const params = new URLSearchParams(location.search);
+  const planet = state.selectedPlanet !== null
+    ? state.planetsByIndex.get(state.selectedPlanet)
+    : null;
+
+  if (planet) params.set('planet', planet.name);
+  else params.delete('planet');
+
+  const query = params.toString();
+  const next = `${location.pathname}${query ? `?${query}` : ''}`;
+  // replaceState, not pushState: clicking through planets should not build a
+  // back-button trail the reader has to unwind.
+  history.replaceState(null, '', next);
+}
+
 /** Mobile: the planet panel is a sheet, so it needs a visible open/close state. */
 function bindLayout() {
   const shell = document.querySelector('.shell');
   subscribe((s, reason) => {
     if (reason !== 'selection') return;
     shell.classList.toggle('has-selection', s.selectedPlanet !== null);
+    syncDeepLink();
   });
 
   for (const tab of document.querySelectorAll('[data-tab]')) {
@@ -79,7 +135,15 @@ function boot() {
   bindLifecycle();
 
   document.body.classList.remove('is-booting');
-  refresh({ force: true }).then(startPolling);
+
+  // Show the last known war immediately, then go and get the real one.
+  hydrate();
+  applyDeepLink();
+
+  refresh({ force: true }).then(() => {
+    applyDeepLink();
+    startPolling();
+  });
 }
 
 if (document.readyState === 'loading') {
