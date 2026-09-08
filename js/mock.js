@@ -71,6 +71,25 @@ const HAZARDS = [
 
 const PLANET_COUNT = 180;
 
+/**
+ * Sectors are regions of space, so assign them from position rather than from
+ * planet index. Indexing by the spiral's ordinal smeared every sector along the
+ * whole arm, which made the map's sector hulls overlap into mush and stacked
+ * all their labels on the galactic centre.
+ *
+ * Eight wedges by five radial bands gives forty cells for forty names.
+ */
+const SECTOR_WEDGES = 8;
+const SECTOR_BANDS = 5;
+
+function sectorFor(x, y) {
+  const angle = (Math.atan2(y, x) + Math.PI * 2) % (Math.PI * 2);
+  const wedge = Math.min(SECTOR_WEDGES - 1, Math.floor((angle / (Math.PI * 2)) * SECTOR_WEDGES));
+  const radius = Math.min(0.999, Math.hypot(x, y));
+  const band = Math.min(SECTOR_BANDS - 1, Math.floor(radius * SECTOR_BANDS));
+  return SECTORS[(band * SECTOR_WEDGES + wedge) % SECTORS.length];
+}
+
 /** Build the static skeleton once: names, positions, sectors, supply lines. */
 function buildGalaxy() {
   const rng = seeded(19700823);
@@ -104,7 +123,7 @@ function buildGalaxy() {
     planets.push({
       index: i,
       name,
-      sector: SECTORS[Math.floor((i / PLANET_COUNT) * SECTORS.length) % SECTORS.length],
+      sector: sectorFor(x, y),
       biome: { name: biomeName, description: biomeDesc },
       hazards,
       hash: Math.floor(rng() * 4e9),

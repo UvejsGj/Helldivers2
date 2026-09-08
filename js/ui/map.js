@@ -1,22 +1,23 @@
 /**
- * Galactic map — a perspective 3D view of the war.
+ * Galactic map — the Super Destroyer's war table.
+ *
+ * Styled after the game's holographic galaxy projection: a cyan hologram of the
+ * galactic plane on a dark table, viewed obliquely, with sector groupings drawn
+ * as glowing hulls, supply lines strung between worlds, and planets rendered as
+ * additive light rather than lit rock. Everything luminous composites with
+ * `lighter`, which is what makes overlapping glow read as a projection instead
+ * of as stacked stickers.
  *
  * On the third dimension, honestly
  * ------------------------------------------------------------------
  * The API publishes two coordinates per planet and no depth. Scattering worlds
  * along an invented z-axis would look like data and be nothing of the kind, so
- * every planet sits at its true position on the galactic plane. What the third
- * dimension carries instead is real:
+ * every planet sits at its true position on the plane, exactly as in game. Only
+ * worlds with a live campaign lift slightly off it — mirroring the floating
+ * objective markers the game hangs above contested planets — and each keeps a
+ * footprint and tether below so its real position stays unambiguous.
  *
- *   - the plane itself, drawn in perspective and free to orbit and tilt, which
- *     is how the galaxy is laid out in game;
- *   - height above the plane, which encodes deployed divers, so the busy fronts
- *     physically rise out of the map. Every raised planet keeps a footprint dot
- *     and a stalk on the plane, so its real position is never ambiguous;
- *   - attack arrows arc over the plane rather than crossing it, which keeps a
- *     front line readable from any angle.
- *
- * Rendered with a small software projector onto a 2D canvas rather than WebGL:
+ * Rendered by a small software projector onto a 2D canvas rather than WebGL:
  * the scene is a few thousand points and lines, the project has no build step
  * and no dependencies, and baking each planet to a cached sprite makes the cost
  * one drawImage per world.
@@ -42,23 +43,25 @@ const FOV = 42 * (Math.PI / 180);
 /** Elevation is clamped short of vertical: the poles are a singularity. */
 const MIN_ELEVATION = 4 * (Math.PI / 180);
 const MAX_ELEVATION = 88 * (Math.PI / 180);
-const DEFAULT_ELEVATION = 34 * (Math.PI / 180);
+/** Low and oblique, the angle you read a table projection from. */
+const DEFAULT_ELEVATION = 27 * (Math.PI / 180);
 
-/** World-space radius of a planet body at the reference distance. */
-const PLANET_RADIUS = 0.016;
+const PLANET_RADIUS = 0.013;
 const HIT_PADDING = 10;
 
-/**
- * Direction toward the light, in world space, and the angle the sprite is baked
- * at. Keeping the light fixed in the world rather than on the screen means the
- * terminators all swing together as the camera orbits, which is most of what
- * sells the scene as lit rather than as flat discs.
- */
-const LIGHT = normalize({ x: -0.45, y: 0.72, z: 0.53 });
-const SPRITE_LIGHT_ANGLE = Math.atan2(-0.42, -0.42);
+/** The hologram's own palette. Faction colours ride on top of this. */
+const HOLO = {
+  base: '#4fd8ff',
+  deep: '#1b7fa8',
+  grid: 'rgba(79, 216, 255, 0.13)',
+  gridFaint: 'rgba(79, 216, 255, 0.06)',
+  hull: 'rgba(96, 200, 240, 0.34)',
+  hullFill: 'rgba(30, 110, 155, 0.10)',
+  label: 'rgba(168, 232, 255, 0.8)',
+};
 
 const view = {
-  azimuth: -0.6,
+  azimuth: -0.55,
   elevation: DEFAULT_ELEVATION,
   distance: BASE_DISTANCE,
   /** Look-at point, on or near the galactic plane. */
@@ -91,8 +94,6 @@ function cross(a, b) {
   };
 }
 
-const dot = (a, b) => a.x * b.x + a.y * b.y + a.z * b.z;
-
 /**
  * A planet's world position: the API plane becomes XZ, with Y as height.
  * The y axis is negated so north stays up when the camera looks from +Z.
@@ -106,15 +107,18 @@ function worldOf(planet, lift = true) {
 }
 
 /**
- * Height above the plane, from deployed divers.
+ * Height above the plane.
  *
- * Quiet worlds stay flat so the plane reads as a map; only fronts with a real
- * garrison rise, which is what makes the shape of the war legible at a glance.
+ * The game's map is flat; what floats above it are the objective markers on
+ * contested worlds. So only planets with a live campaign lift, and only a
+ * little — enough to separate a battle from the plane, not enough to turn the
+ * galaxy into a bar chart. Scaled by garrison so the heaviest fronts sit
+ * highest.
  */
 function planetHeight(planet) {
-  const players = planet.players || 0;
-  if (players < 1500) return 0;
-  return Math.min(0.5, Math.log10(players / 1500) * 0.135);
+  if (!planet.campaign && !planet.event) return 0;
+  const players = Math.max(planet.players || 0, 1);
+  return 0.035 + Math.min(0.075, Math.log10(Math.max(players, 100) / 100) * 0.026);
 }
 
 /** Camera basis, rebuilt whenever the view changes. */
@@ -135,14 +139,13 @@ function updateCamera() {
   focal = (height / 2) / Math.tan(FOV / 2);
 }
 
-/**
- * World point to screen. `depth` is distance along the view axis; anything at
- * or behind the near plane is returned with `visible: false` rather than
- * projected, since dividing by a negative depth mirrors geometry behind you
- * into the middle of the scene.
- */
 const NEAR = 0.05;
 
+/**
+ * World point to screen. Anything at or behind the near plane comes back
+ * `visible: false` rather than projected, since dividing by a negative depth
+ * mirrors geometry behind the camera into the middle of the scene.
+ */
 function project(p) {
   const dx = p.x - camera.eye.x;
   const dy = p.y - camera.eye.y;
@@ -161,19 +164,15 @@ function project(p) {
   };
 }
 
-/** Screen point back onto the galactic plane (y = 0), for pointer panning. */
-function screenToPlane(sx, sy) {
-  const ndcX = (sx - width / 2) / focal;
-  const ndcY = -(sy - height / 2) / focal;
-  const dir = {
-    x: camera.forward.x + camera.right.x * ndcX + camera.up.x * ndcY,
-    y: camera.forward.y + camera.right.y * ndcX + camera.up.y * ndcY,
-    z: camera.forward.z + camera.right.z * ndcX + camera.up.z * ndcY,
-  };
-  if (Math.abs(dir.y) < 1e-6) return null;
-  const t = -camera.eye.y / dir.y;
-  if (t <= 0) return null;
-  return { x: camera.eye.x + dir.x * t, y: 0, z: camera.eye.z + dir.z * t };
+/**
+ * Atmospheric depth. A projection this size needs the far rim to recede or the
+ * whole disc reads as flat pattern; near things stay full strength.
+ */
+function fog(depth) {
+  const near = view.distance * 0.55;
+  const far = view.distance * 2.1;
+  if (depth <= near) return 1;
+  return clamp(1 - (depth - near) / (far - near), 0.18, 1);
 }
 
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
@@ -181,15 +180,19 @@ const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 /* ----------------------------------------------------------- sprite cache */
 
 /**
- * Planet bodies are baked once per colour pair and blitted thereafter. Building
- * the gradients fresh for 260 worlds every frame is what would actually cost
+ * Planets are baked once per colour and blitted thereafter. Building the
+ * gradients fresh for 260 worlds every frame is what would actually cost
  * something here; drawImage of a cached bitmap costs nothing.
+ *
+ * The sprite is additive light: a hot near-white core, a faction-tinted bloom,
+ * and a containment ring — a projected point of light, not a lit sphere.
  */
-const SPRITE_SIZE = 96;
+const SPRITE_SIZE = 128;
+const CORE_FRACTION = 0.115;
 const spriteCache = new Map();
 
-function planetSprite(bodyColor, ringColor) {
-  const key = `${bodyColor}|${ringColor}`;
+function planetSprite(coreColor, glowColor) {
+  const key = `${coreColor}|${glowColor}`;
   const cached = spriteCache.get(key);
   if (cached) return cached;
 
@@ -198,34 +201,32 @@ function planetSprite(bodyColor, ringColor) {
   c.height = SPRITE_SIZE;
   const g = c.getContext('2d');
   const mid = SPRITE_SIZE / 2;
-  const bodyR = SPRITE_SIZE * 0.26;
+  const core = SPRITE_SIZE * CORE_FRACTION;
 
-  // Atmosphere: a faction-tinted halo, so allegiance reads before the surface.
-  const halo = g.createRadialGradient(mid, mid, bodyR * 0.7, mid, mid, mid);
-  halo.addColorStop(0, withAlpha(ringColor, 0.42));
-  halo.addColorStop(0.45, withAlpha(ringColor, 0.12));
-  halo.addColorStop(1, withAlpha(ringColor, 0));
-  g.fillStyle = halo;
+  // Outer bloom — the halo that makes crowded space glow rather than clutter.
+  const bloom = g.createRadialGradient(mid, mid, core * 0.5, mid, mid, mid);
+  bloom.addColorStop(0, withAlpha(glowColor, 0.34));
+  bloom.addColorStop(0.22, withAlpha(glowColor, 0.11));
+  bloom.addColorStop(0.6, withAlpha(glowColor, 0.025));
+  bloom.addColorStop(1, withAlpha(glowColor, 0));
+  g.fillStyle = bloom;
   g.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);
 
-  // Body, lit from the upper left with a soft terminator.
-  const lx = mid - bodyR * 0.42;
-  const ly = mid - bodyR * 0.42;
-  const body = g.createRadialGradient(lx, ly, bodyR * 0.08, mid, mid, bodyR);
-  body.addColorStop(0, lighten(bodyColor, 0.5));
-  body.addColorStop(0.45, bodyColor);
-  body.addColorStop(0.82, darken(bodyColor, 0.55));
-  body.addColorStop(1, darken(bodyColor, 0.78));
+  // Core: hot centre falling to the planet's own tint, so biome still reads.
+  const body = g.createRadialGradient(mid, mid, 0, mid, mid, core);
+  body.addColorStop(0, '#ffffff');
+  body.addColorStop(0.35, lighten(coreColor, 0.55));
+  body.addColorStop(1, withAlpha(coreColor, 0.85));
   g.fillStyle = body;
   g.beginPath();
-  g.arc(mid, mid, bodyR, 0, Math.PI * 2);
+  g.arc(mid, mid, core, 0, Math.PI * 2);
   g.fill();
 
-  // Rim light in the faction colour, along the terminator's far edge.
-  g.strokeStyle = withAlpha(ringColor, 0.85);
-  g.lineWidth = SPRITE_SIZE * 0.018;
+  // Containment ring, a little clear of the core.
+  g.strokeStyle = withAlpha(glowColor, 0.75);
+  g.lineWidth = SPRITE_SIZE * 0.008;
   g.beginPath();
-  g.arc(mid, mid, bodyR * 0.99, 0, Math.PI * 2);
+  g.arc(mid, mid, core * 1.85, 0, Math.PI * 2);
   g.stroke();
 
   spriteCache.set(key, c);
@@ -249,16 +250,20 @@ function withAlpha(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/**
+ * Returns hex, not `rgb()`, so the result can be fed straight back into
+ * parseHex — the palette helpers compose, and a lightened colour is still a
+ * valid input to withAlpha().
+ */
 function lighten(hex, amount) {
   const { r, g, b } = parseHex(hex);
   const mix = (c) => Math.round(c + (255 - c) * amount);
-  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+  return toHex(mix(r), mix(g), mix(b));
 }
 
-function darken(hex, amount) {
-  const { r, g, b } = parseHex(hex);
-  const mix = (c) => Math.round(c * (1 - amount));
-  return `rgb(${mix(r)}, ${mix(g)}, ${mix(b)})`;
+function toHex(r, g, b) {
+  const pair = (c) => clamp(Math.round(c), 0, 255).toString(16).padStart(2, '0');
+  return `#${pair(r)}${pair(g)}${pair(b)}`;
 }
 
 /* --------------------------------------------------------------- starfield */
@@ -277,8 +282,7 @@ function seeded(seed) {
 const STARS = (() => {
   const rng = seeded(0x5e4);
   const stars = [];
-  for (let i = 0; i < 420; i++) {
-    // Even distribution over a sphere well outside the galaxy.
+  for (let i = 0; i < 360; i++) {
     const u = rng() * 2 - 1;
     const theta = rng() * Math.PI * 2;
     const r = Math.sqrt(1 - u * u);
@@ -286,14 +290,121 @@ const STARS = (() => {
       x: r * Math.cos(theta) * 14,
       y: u * 14,
       z: r * Math.sin(theta) * 14,
-      size: 0.4 + rng() * 1.3,
-      alpha: 0.25 + rng() * 0.6,
+      size: 0.4 + rng() * 1.1,
+      alpha: 0.16 + rng() * 0.4,
     });
   }
   return stars;
 })();
 
+/**
+ * Dust motes drifting in the projection volume. A hologram reads as a volume
+ * rather than a decal when there is something suspended inside it.
+ */
+const MOTES = (() => {
+  const rng = seeded(0xd0f7);
+  const motes = [];
+  for (let i = 0; i < 90; i++) {
+    const angle = rng() * Math.PI * 2;
+    const radius = 0.15 + rng() * 1.15;
+    motes.push({
+      x: Math.cos(angle) * radius,
+      z: Math.sin(angle) * radius,
+      baseY: rng() * 0.34,
+      phase: rng() * Math.PI * 2,
+      alpha: 0.1 + rng() * 0.28,
+    });
+  }
+  return motes;
+})();
+
+/* ---------------------------------------------------------- sector shapes */
+
+/**
+ * Sector hulls, the way the game groups worlds into named regions.
+ *
+ * Rebuilt only when the planet list changes: convex hulls over ~40 sectors are
+ * cheap but pointless to recompute every frame.
+ */
+let sectorShapes = [];
+let sectorSource = null;
+
+function buildSectors(planets) {
+  const bySector = new Map();
+  for (const planet of planets) {
+    const name = planet.sector || 'Unknown';
+    if (!bySector.has(name)) bySector.set(name, []);
+    bySector.get(name).push({ x: planet.position.x, z: -planet.position.y });
+  }
+
+  const shapes = [];
+  for (const [name, points] of bySector) {
+    if (points.length < 3) continue;
+    const hull = convexHull(points);
+    if (hull.length < 3) continue;
+
+    const centroid = hull.reduce(
+      (acc, p) => ({ x: acc.x + p.x / hull.length, z: acc.z + p.z / hull.length }),
+      { x: 0, z: 0 },
+    );
+    // Push the boundary clear of the worlds it encloses.
+    const padded = hull.map((p) => {
+      const dx = p.x - centroid.x;
+      const dz = p.z - centroid.z;
+      const length = Math.hypot(dx, dz) || 1;
+      return { x: p.x + (dx / length) * 0.045, z: p.z + (dz / length) * 0.045 };
+    });
+    shapes.push({ name, points: padded, centroid, size: points.length });
+  }
+  return shapes;
+}
+
+/** Andrew's monotone chain. Returns the hull counter-clockwise. */
+function convexHull(points) {
+  const sorted = [...points].sort((a, b) => (a.x - b.x) || (a.z - b.z));
+  if (sorted.length < 3) return sorted;
+  const cross2 = (o, a, b) => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
+
+  const lower = [];
+  for (const p of sorted) {
+    while (lower.length >= 2 && cross2(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop();
+    }
+    lower.push(p);
+  }
+  const upper = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const p = sorted[i];
+    while (upper.length >= 2 && cross2(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop();
+    }
+    upper.push(p);
+  }
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
+function ensureSectors() {
+  if (sectorSource === state.planets) return;
+  sectorSource = state.planets;
+  sectorShapes = buildSectors(state.planets);
+}
+
 /* ------------------------------------------------------------------ sizing */
+
+/** Scanline overlay, baked once and tiled — cheaper than stroking every row. */
+let scanlinePattern = null;
+
+function buildScanlines() {
+  const tile = document.createElement('canvas');
+  tile.width = 1;
+  tile.height = 3;
+  const g = tile.getContext('2d');
+  g.fillStyle = 'rgba(120, 200, 240, 0.055)';
+  g.fillRect(0, 0, 1, 1);
+  scanlinePattern = ctx.createPattern(tile, 'repeat');
+}
 
 function resize() {
   const rect = canvas.getBoundingClientRect();
@@ -304,6 +415,7 @@ function resize() {
   canvas.width = Math.round(width * dpr);
   canvas.height = Math.round(height * dpr);
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (!scanlinePattern) buildScanlines();
   if (!userMovedView) {
     view.target = { x: 0, y: 0, z: 0 };
     view.distance = BASE_DISTANCE;
@@ -317,79 +429,90 @@ function resize() {
 function draw(now) {
   if (!width || !height) return;
   updateCamera();
+  ensureSectors();
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
 
-  drawNebula();
+  drawTable();
   drawStars();
 
   if (!state.planets.length) {
     drawEmptyState();
+    drawOverlay(now);
     return;
   }
 
-  drawPlane(now);
+  // Everything luminous composites additively: overlapping glow brightens the
+  // way projected light does, instead of the nearest sprite simply winning.
+  drawSectors();
+
+  ctx.globalCompositeOperation = 'lighter';
+  drawCoreHaze();
+  drawGrid(now);
   drawSupplyLines();
-  drawStalks();
+  drawMotes(now);
+  drawTethers();
   drawAttacks(now);
+  drawSuperEarth(now);
   const drawn = drawPlanets(now);
-  drawLabels(drawn);
+  ctx.globalCompositeOperation = 'source-over';
+
+  drawLabels(drawn, drawSectorLabels());
+  drawOverlay(now);
 
   if (zoomReadout) zoomReadout.textContent = `${(BASE_DISTANCE / view.distance).toFixed(2)}×`;
 }
 
-/** Screen-space wash, shifted by heading so it parallaxes as you orbit. */
-function drawNebula() {
-  const drift = (view.azimuth / Math.PI) * width * 0.22;
-  const blobs = [
-    [width * 0.28 - drift, height * 0.34, Math.max(width, height) * 0.55, 'rgba(38, 74, 138, 0.20)'],
-    [width * 0.78 - drift, height * 0.72, Math.max(width, height) * 0.48, 'rgba(96, 40, 110, 0.16)'],
-    [width * 0.55 - drift, height * 0.12, Math.max(width, height) * 0.40, 'rgba(20, 60, 90, 0.16)'],
-  ];
-  for (const [x, y, r, color] of blobs) {
-    const gradient = ctx.createRadialGradient(x, y, 0, x, y, r);
-    gradient.addColorStop(0, color);
-    gradient.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, width, height);
-  }
+/** The dark table the projection stands on. */
+function drawTable() {
+  const gradient = ctx.createRadialGradient(
+    width / 2, height * 0.56, 0,
+    width / 2, height * 0.56, Math.max(width, height) * 0.78,
+  );
+  gradient.addColorStop(0, 'rgba(12, 34, 52, 0.95)');
+  gradient.addColorStop(0.55, 'rgba(6, 16, 26, 0.75)');
+  gradient.addColorStop(1, 'rgba(2, 5, 9, 0)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
 }
 
 function drawStars() {
-  ctx.save();
   for (const star of STARS) {
     const p = project(star);
     if (!p.visible || p.x < 0 || p.y < 0 || p.x > width || p.y > height) continue;
-    ctx.fillStyle = `rgba(210, 226, 245, ${star.alpha})`;
+    ctx.fillStyle = `rgba(190, 226, 245, ${star.alpha})`;
     ctx.fillRect(p.x, p.y, star.size, star.size);
   }
-  ctx.restore();
 }
 
-function drawEmptyState() {
-  ctx.save();
-  ctx.fillStyle = 'rgba(200, 214, 230, 0.35)';
-  ctx.font = '600 13px "Saira Condensed", "Arial Narrow", sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('NO TELEMETRY', width / 2, height / 2);
-  ctx.restore();
+/** The bright galactic core, projected onto the plane. */
+function drawCoreHaze() {
+  const centre = project({ x: 0, y: 0, z: 0 });
+  const edge = project({ x: 0.85, y: 0, z: 0 });
+  if (!centre.visible || !edge.visible) return;
+  const radius = Math.max(40, Math.hypot(edge.x - centre.x, edge.y - centre.y));
+  const gradient = ctx.createRadialGradient(centre.x, centre.y, 0, centre.x, centre.y, radius);
+  gradient.addColorStop(0, 'rgba(56, 132, 180, 0.085)');
+  gradient.addColorStop(0.45, 'rgba(38, 100, 145, 0.035)');
+  gradient.addColorStop(1, 'rgba(20, 60, 100, 0)');
+  ctx.fillStyle = gradient;
+  ctx.beginPath();
+  ctx.arc(centre.x, centre.y, radius, 0, Math.PI * 2);
+  ctx.fill();
 }
 
-/** Concentric rings and spokes on the plane: the map's floor, and its horizon. */
-function drawPlane(now) {
-  ctx.save();
+function drawGrid(now) {
   ctx.lineWidth = 1;
-
   for (let r = 0.25; r <= 1.3; r += 0.25) {
-    ctx.strokeStyle = `rgba(94, 140, 196, ${r > 1.2 ? 0.05 : 0.1})`;
+    ctx.strokeStyle = r > 1.2 ? HOLO.gridFaint : HOLO.grid;
     ringPath(r);
     ctx.stroke();
   }
 
-  ctx.strokeStyle = 'rgba(94, 140, 196, 0.06)';
-  for (let i = 0; i < 12; i++) {
-    const angle = (i / 12) * Math.PI * 2;
+  ctx.strokeStyle = HOLO.gridFaint;
+  for (let i = 0; i < 16; i++) {
+    const angle = (i / 16) * Math.PI * 2;
     const a = project({ x: 0, y: 0, z: 0 });
     const b = project({ x: Math.cos(angle) * 1.3, y: 0, z: Math.sin(angle) * 1.3 });
     if (!a.visible || !b.visible) continue;
@@ -399,16 +522,16 @@ function drawPlane(now) {
     ctx.stroke();
   }
 
-  // Radar sweep, on the plane rather than the screen, so it reads as part of
-  // the world once the view is tilted.
+  // Sweep line, on the plane rather than the screen, so it belongs to the world
+  // once the view is tilted.
   if (animating) {
     const angle = (now / 9000) % (Math.PI * 2);
     const a = project({ x: 0, y: 0, z: 0 });
     const b = project({ x: Math.cos(angle) * 1.3, y: 0, z: Math.sin(angle) * 1.3 });
     if (a.visible && b.visible) {
       const gradient = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
-      gradient.addColorStop(0, 'rgba(120, 180, 255, 0.16)');
-      gradient.addColorStop(1, 'rgba(120, 180, 255, 0)');
+      gradient.addColorStop(0, 'rgba(120, 220, 255, 0.20)');
+      gradient.addColorStop(1, 'rgba(120, 220, 255, 0)');
       ctx.strokeStyle = gradient;
       ctx.lineWidth = 2;
       ctx.beginPath();
@@ -417,12 +540,9 @@ function drawPlane(now) {
       ctx.stroke();
     }
   }
-
-  drawSuperEarth(now);
-  ctx.restore();
 }
 
-function ringPath(radius, segments = 72) {
+function ringPath(radius, segments = 84) {
   ctx.beginPath();
   let started = false;
   for (let i = 0; i <= segments; i++) {
@@ -433,51 +553,43 @@ function ringPath(radius, segments = 72) {
   }
 }
 
-function drawSuperEarth(now) {
-  const base = project({ x: 0, y: 0, z: 0 });
-  if (!base.visible) return;
-  const pulse = animating ? 0.5 + 0.5 * Math.sin(now / 900) : 0.7;
-  const r = Math.max(3, 0.02 * base.scale);
+/**
+ * Sector hulls: soft-cornered regions enclosing the worlds of each sector, the
+ * way the game groups them. Corners are rounded through the midpoints of the
+ * hull edges, which turns a spiky polygon into something that reads as a region.
+ */
+function drawSectors() {
+  for (const shape of sectorShapes) {
+    const projected = shape.points.map((p) => project({ x: p.x, y: 0, z: p.z }));
+    if (projected.some((p) => !p.visible)) continue;
+    if (projected.every((p) => offscreen(p, 60))) continue;
 
-  // A beacon rising from the plane, so the capital is findable at any tilt.
-  const top = project({ x: 0, y: 0.34, z: 0 });
-  if (top.visible) {
-    const beam = ctx.createLinearGradient(base.x, base.y, top.x, top.y);
-    beam.addColorStop(0, 'rgba(245, 197, 24, 0.55)');
-    beam.addColorStop(1, 'rgba(245, 197, 24, 0)');
-    ctx.strokeStyle = beam;
-    ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(base.x, base.y);
-    ctx.lineTo(top.x, top.y);
+    const n = projected.length;
+    const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+    let start = mid(projected[n - 1], projected[0]);
+    ctx.moveTo(start.x, start.y);
+    for (let i = 0; i < n; i++) {
+      const control = projected[i];
+      const end = mid(projected[i], projected[(i + 1) % n]);
+      ctx.quadraticCurveTo(control.x, control.y, end.x, end.y);
+    }
+    ctx.closePath();
+
+    const depth = projected.reduce((sum, p) => sum + p.depth, 0) / n;
+    ctx.globalAlpha = fog(depth);
+    ctx.fillStyle = HOLO.hullFill;
+    ctx.fill();
+    ctx.strokeStyle = HOLO.hull;
+    ctx.lineWidth = 1;
     ctx.stroke();
+    ctx.globalAlpha = 1;
   }
-
-  ctx.strokeStyle = `rgba(245, 197, 24, ${0.3 + pulse * 0.4})`;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(base.x, base.y, r * 2.4 + pulse * 3, 0, Math.PI * 2);
-  ctx.stroke();
-
-  ctx.fillStyle = '#f5c518';
-  ctx.beginPath();
-  ctx.arc(base.x, base.y, r, 0, Math.PI * 2);
-  ctx.fill();
-
-  // The label is drawn with the rest, so it takes part in collision testing
-  // instead of stamping itself over whatever planet name shares the spot.
-  superEarthLabel = { x: base.x, y: base.y + r + 15 };
 }
-
-/** Screen position for Super Earth's caption, set each frame while drawing. */
-let superEarthLabel = null;
 
 function drawSupplyLines() {
   const byIndex = state.planetsByIndex;
-  ctx.save();
-  ctx.strokeStyle = 'rgba(118, 150, 190, 0.17)';
   ctx.lineWidth = 1;
-  ctx.beginPath();
   for (const line of state.supplyLines) {
     const a = byIndex.get(line.a);
     const b = byIndex.get(line.b);
@@ -486,53 +598,67 @@ function drawSupplyLines() {
     const pb = project(worldOf(b, false));
     if (!pa.visible || !pb.visible) continue;
     if (offscreen(pa) && offscreen(pb)) continue;
+    ctx.globalAlpha = fog((pa.depth + pb.depth) / 2) * 0.26;
+    ctx.strokeStyle = HOLO.base;
+    ctx.beginPath();
     ctx.moveTo(pa.x, pa.y);
     ctx.lineTo(pb.x, pb.y);
+    ctx.stroke();
   }
-  ctx.stroke();
-  ctx.restore();
+  ctx.globalAlpha = 1;
 }
 
-/** Footprint and stalk for every planet lifted off the plane. */
-function drawStalks() {
-  ctx.save();
+function drawMotes(now) {
+  const t = animating ? now / 4200 : 0;
+  for (const mote of MOTES) {
+    const y = mote.baseY + Math.sin(t + mote.phase) * 0.03;
+    const p = project({ x: mote.x, y, z: mote.z });
+    if (!p.visible || offscreen(p)) continue;
+    ctx.globalAlpha = mote.alpha * fog(p.depth);
+    ctx.fillStyle = HOLO.base;
+    ctx.fillRect(p.x, p.y, 1.4, 1.4);
+  }
+  ctx.globalAlpha = 1;
+}
+
+/** Footprint and tether under every contested world lifted off the plane. */
+function drawTethers() {
   for (const planet of state.planets) {
-    const h = planetHeight(planet);
-    if (h <= 0) continue;
+    if (planetHeight(planet) <= 0) continue;
     const base = project(worldOf(planet, false));
     const top = project(worldOf(planet, true));
     if (!base.visible || !top.visible) continue;
     if (offscreen(base) && offscreen(top)) continue;
 
     const color = faction(planet.currentOwner).color;
+    const alpha = fog(base.depth);
     const gradient = ctx.createLinearGradient(base.x, base.y, top.x, top.y);
-    gradient.addColorStop(0, withAlpha(color, 0.06));
-    gradient.addColorStop(1, withAlpha(color, 0.5));
+    gradient.addColorStop(0, withAlpha(color, 0.05 * alpha));
+    gradient.addColorStop(1, withAlpha(color, 0.5 * alpha));
     ctx.strokeStyle = gradient;
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(base.x, base.y);
     ctx.lineTo(top.x, top.y);
     ctx.stroke();
 
-    ctx.fillStyle = withAlpha(color, 0.4);
+    // Objective footprint: a small ring on the plane, as the game marks them.
+    ctx.strokeStyle = withAlpha(color, 0.4 * alpha);
     ctx.beginPath();
-    ctx.arc(base.x, base.y, 1.8, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.arc(base.x, base.y, Math.max(2.5, 0.012 * base.scale), 0, Math.PI * 2);
+    ctx.stroke();
   }
-  ctx.restore();
 }
 
 /**
  * Attack arrows, arced over the plane.
  *
- * A straight line between two worlds lies flat and disappears edge-on at a low
- * tilt; lifting the midpoint keeps the front line readable from every angle and
- * separates crossing routes.
+ * A straight line between two worlds lies flat and vanishes edge-on at the low
+ * tilt this view uses; lifting the midpoint keeps the front line readable from
+ * every angle and separates crossing routes.
  */
 function drawAttacks(now) {
   const byIndex = state.planetsByIndex;
-  ctx.save();
 
   for (const attack of state.attacks) {
     const source = byIndex.get(attack.source);
@@ -542,7 +668,7 @@ function drawAttacks(now) {
     const a = worldOf(source, false);
     const b = worldOf(target, false);
     const span = Math.hypot(b.x - a.x, b.z - a.z);
-    const lift = Math.min(0.3, 0.1 + span * 0.32);
+    const lift = Math.min(0.22, 0.07 + span * 0.24);
 
     const points = [];
     const SEGMENTS = 26;
@@ -551,7 +677,7 @@ function drawAttacks(now) {
       const p = project({
         x: a.x + (b.x - a.x) * t,
         // Parabola through both endpoints, peaking at the midpoint.
-        y: a.y + (b.y - a.y) * t + Math.sin(t * Math.PI) * lift,
+        y: Math.sin(t * Math.PI) * lift,
         z: a.z + (b.z - a.z) * t,
       });
       if (!p.visible) { points.length = 0; break; }
@@ -560,9 +686,10 @@ function drawAttacks(now) {
     if (points.length < 2) continue;
 
     const color = faction(attack.faction).color;
+    const alpha = fog(points[Math.floor(points.length / 2)].depth);
     ctx.strokeStyle = color;
-    ctx.globalAlpha = attack.inferred ? 0.38 : 0.8;
-    ctx.lineWidth = attack.inferred ? 1.2 : 2;
+    ctx.globalAlpha = (attack.inferred ? 0.4 : 0.85) * alpha;
+    ctx.lineWidth = attack.inferred ? 1.2 : 1.9;
     ctx.setLineDash(attack.inferred ? [3, 5] : [9, 6]);
     ctx.lineDashOffset = animating ? -(now / 45) % 15 : 0;
     ctx.beginPath();
@@ -571,12 +698,11 @@ function drawAttacks(now) {
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Arrowhead, aimed along the arc's final segment.
     const tip = points[points.length - 1];
     const prev = points[points.length - 3] || points[points.length - 2];
     const angle = Math.atan2(tip.y - prev.y, tip.x - prev.x);
-    const size = clamp(tip.scale * 0.014, 5, 13);
-    ctx.globalAlpha = attack.inferred ? 0.5 : 1;
+    const size = clamp(tip.scale * 0.012, 5, 12);
+    ctx.globalAlpha = (attack.inferred ? 0.55 : 1) * alpha;
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.moveTo(tip.x, tip.y);
@@ -585,10 +711,55 @@ function drawAttacks(now) {
     ctx.closePath();
     ctx.fill();
   }
-
   ctx.globalAlpha = 1;
-  ctx.restore();
 }
+
+/** Super Earth: the projection's origin, and its brightest point. */
+function drawSuperEarth(now) {
+  const base = project({ x: 0, y: 0, z: 0 });
+  if (!base.visible) return;
+  const pulse = animating ? 0.5 + 0.5 * Math.sin(now / 900) : 0.7;
+  const r = Math.max(3, 0.016 * base.scale);
+
+  const top = project({ x: 0, y: 0.3, z: 0 });
+  if (top.visible) {
+    const beam = ctx.createLinearGradient(base.x, base.y, top.x, top.y);
+    beam.addColorStop(0, 'rgba(245, 210, 90, 0.5)');
+    beam.addColorStop(1, 'rgba(245, 210, 90, 0)');
+    ctx.strokeStyle = beam;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(base.x, base.y);
+    ctx.lineTo(top.x, top.y);
+    ctx.stroke();
+  }
+
+  const glow = ctx.createRadialGradient(base.x, base.y, 0, base.x, base.y, r * 6);
+  glow.addColorStop(0, 'rgba(255, 226, 130, 0.6)');
+  glow.addColorStop(1, 'rgba(255, 200, 40, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(base.x, base.y, r * 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = `rgba(245, 197, 24, ${0.3 + pulse * 0.45})`;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(base.x, base.y, r * 2.6 + pulse * 3, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.fillStyle = '#fff3c4';
+  ctx.beginPath();
+  ctx.arc(base.x, base.y, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  // The label is drawn with the rest, so it takes part in collision testing
+  // instead of stamping itself over whatever planet name shares the spot.
+  superEarthLabel = { x: base.x, y: base.y + r + 16 };
+}
+
+/** Screen position for Super Earth's caption, set each frame while drawing. */
+let superEarthLabel = null;
 
 /**
  * Planets, painted back to front.
@@ -600,16 +771,11 @@ function drawPlanets(now) {
   const selected = state.selectedPlanet;
   const drawn = [];
 
-  // The light is directional, so its screen angle is the same for every planet
-  // and is worth computing once per frame rather than per world.
-  const lightAngle = Math.atan2(-dot(LIGHT, camera.up), dot(LIGHT, camera.right));
-  const spriteRotation = lightAngle - SPRITE_LIGHT_ANGLE;
-
   for (const planet of state.planets) {
     const p = project(worldOf(planet));
     if (!p.visible) continue;
-    const radius = Math.max(1.6, PLANET_RADIUS * p.scale);
-    if (offscreen(p, radius + 30)) continue;
+    const radius = Math.max(1.3, PLANET_RADIUS * p.scale);
+    if (offscreen(p, radius + 40)) continue;
     drawn.push({ planet, p, radius });
   }
 
@@ -621,62 +787,131 @@ function drawPlanets(now) {
     const active = Boolean(planet.campaign || planet.event);
     const isSelected = selected === planet.index;
     const isHovered = hovered === planet.index;
+    const alpha = fog(p.depth);
 
-    // Expanding ring on live campaigns, so battles pull the eye.
+    ctx.globalAlpha = alpha;
+
     if (active && animating) {
       const phase = ((now / 1400) + planet.index * 0.13) % 1;
       ctx.strokeStyle = info.color;
-      ctx.globalAlpha = (1 - phase) * 0.7;
-      ctx.lineWidth = 1.5;
+      ctx.globalAlpha = (1 - phase) * 0.7 * alpha;
+      ctx.lineWidth = 1.4;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, radius * 1.6 + phase * radius * 3.2, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, radius * 2 + phase * radius * 4, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = alpha;
     }
 
-    const sprite = planetSprite(biomeColor(planet.biome), info.color);
-    // The sprite's body occupies 0.26 of its width; scale so that lands on `radius`.
-    const size = radius / 0.26;
-    ctx.save();
-    ctx.translate(p.x, p.y);
-    ctx.rotate(spriteRotation);
-    ctx.drawImage(sprite, -size / 2, -size / 2, size, size);
-    ctx.restore();
+    // Biome tints the core; the faction owns the glow. Contested worlds burn
+    // in their faction colour outright, which is how the game flags a fight.
+    const core = active ? lighten(info.color, 0.35) : biomeColor(planet.biome);
+    const sprite = planetSprite(core, info.color);
+    const size = (radius / CORE_FRACTION) * (active ? 1.15 : 1);
+    ctx.drawImage(sprite, p.x - size / 2, p.y - size / 2, size, size);
 
     if (active && planet.liberation > 0.5) {
-      ctx.strokeStyle = planet.event ? '#f5c518' : '#ffffff';
-      ctx.lineWidth = Math.max(1.5, radius * 0.22);
+      ctx.strokeStyle = planet.event ? '#ffd75e' : '#ffffff';
+      ctx.lineWidth = Math.max(1.5, radius * 0.3);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, radius * 1.45, -Math.PI / 2,
+      ctx.arc(p.x, p.y, radius * 2.6, -Math.PI / 2,
         -Math.PI / 2 + (planet.liberation / 100) * Math.PI * 2);
       ctx.stroke();
     }
 
     if (isSelected || isHovered) {
+      ctx.globalAlpha = 1;
       ctx.strokeStyle = isSelected ? '#ffffff' : 'rgba(255,255,255,0.6)';
-      ctx.lineWidth = isSelected ? 2 : 1.2;
+      ctx.lineWidth = isSelected ? 1.8 : 1.2;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, radius * 2.1, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, radius * 3.4, 0, Math.PI * 2);
       ctx.stroke();
+      // Selection brackets, in the game's targeting idiom.
+      if (isSelected) {
+        const b = radius * 3.4;
+        for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+          ctx.beginPath();
+          ctx.moveTo(p.x + sx * b, p.y + sy * b * 0.55);
+          ctx.lineTo(p.x + sx * b, p.y + sy * b);
+          ctx.lineTo(p.x + sx * b * 0.55, p.y + sy * b);
+          ctx.stroke();
+        }
+      }
     }
   }
 
+  ctx.globalAlpha = 1;
   drawn.reverse();
   return drawn;
+}
+
+/**
+ * Sector names on the plane.
+ *
+ * Collision-tested like the planet labels, largest sector first, and skipped
+ * entirely for regions too small on screen to be worth naming. Returns the
+ * boxes it claimed so planet labels can avoid them too.
+ */
+function drawSectorLabels() {
+  const placed = [];
+  const zoom = BASE_DISTANCE / view.distance;
+  if (zoom < 0.75) return placed;
+
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.font = '600 9px "Saira Condensed", "Arial Narrow", sans-serif';
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '2px';
+
+  const candidates = [];
+  for (const shape of sectorShapes) {
+    if (shape.size < 3) continue;
+    const p = project({ x: shape.centroid.x, y: 0, z: shape.centroid.z });
+    if (!p.visible || offscreen(p, 40)) continue;
+
+    // A sector too small on screen to hold its own name is better left unnamed.
+    const projected = shape.points.map((q) => project({ x: q.x, y: 0, z: q.z }));
+    if (projected.some((q) => !q.visible)) continue;
+    const spanX = Math.max(...projected.map((q) => q.x)) - Math.min(...projected.map((q) => q.x));
+    if (spanX < 64) continue;
+
+    candidates.push({ shape, p, spanX });
+  }
+
+  // Bigger regions get first claim on the space.
+  candidates.sort((a, b) => b.spanX - a.spanX);
+
+  for (const { shape, p } of candidates) {
+    const label = shape.name.toUpperCase();
+    const w = ctx.measureText(label).width;
+    const box = { x1: p.x - w / 2 - 3, y1: p.y - 9, x2: p.x + w / 2 + 3, y2: p.y + 4 };
+    if (placed.some((o) => !(box.x2 < o.x1 || box.x1 > o.x2 || box.y2 < o.y1 || box.y1 > o.y2))) {
+      continue;
+    }
+    placed.push(box);
+
+    ctx.globalAlpha = fog(p.depth);
+    ctx.fillStyle = 'rgba(2, 7, 12, 0.85)';
+    ctx.fillText(label, p.x + 1, p.y + 1);
+    ctx.fillStyle = HOLO.label;
+    ctx.fillText(label, p.x, p.y);
+  }
+
+  ctx.globalAlpha = 1;
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  ctx.restore();
+  return placed;
 }
 
 /**
  * Labels, nearest first, skipping any that would collide with one already
  * placed. Without that a dense sector turns into an unreadable smear.
  */
-function drawLabels(drawn) {
+function drawLabels(drawn, reserved = []) {
   const zoom = BASE_DISTANCE / view.distance;
-  const placed = [];
+  // Sector captions already claimed their space; planet names go around them.
+  const placed = [...reserved];
   ctx.save();
   ctx.textAlign = 'center';
 
-  // The capital is drawn first and reserves its box, so no planet name can
-  // land on top of it.
   if (superEarthLabel) {
     ctx.font = '700 10px "Saira Condensed", "Arial Narrow", sans-serif';
     const w = ctx.measureText('SUPER EARTH').width;
@@ -684,9 +919,9 @@ function drawLabels(drawn) {
       x1: superEarthLabel.x - w / 2 - 2, y1: superEarthLabel.y - 10,
       x2: superEarthLabel.x + w / 2 + 2, y2: superEarthLabel.y + 3,
     });
-    ctx.fillStyle = 'rgba(5, 8, 13, 0.75)';
+    ctx.fillStyle = 'rgba(3, 8, 14, 0.8)';
     ctx.fillText('SUPER EARTH', superEarthLabel.x + 1, superEarthLabel.y + 1);
-    ctx.fillStyle = 'rgba(245, 197, 24, 0.92)';
+    ctx.fillStyle = 'rgba(255, 214, 90, 0.95)';
     ctx.fillText('SUPER EARTH', superEarthLabel.x, superEarthLabel.y);
     superEarthLabel = null;
   }
@@ -700,7 +935,7 @@ function drawLabels(drawn) {
     ctx.font = `${active || focused ? 600 : 400} 10px "Saira Condensed", "Arial Narrow", sans-serif`;
     const w = ctx.measureText(text).width;
     const x = p.x;
-    const y = p.y - radius - 8;
+    const y = p.y - radius * 2.8 - 6;
     const box = { x1: x - w / 2 - 2, y1: y - 10, x2: x + w / 2 + 2, y2: y + 3 };
 
     if (!focused && placed.some((o) => !(box.x2 < o.x1 || box.x1 > o.x2 || box.y2 < o.y1 || box.y1 > o.y2))) {
@@ -708,13 +943,46 @@ function drawLabels(drawn) {
     }
     placed.push(box);
 
-    // A backing shadow keeps names legible over the nebula and the starfield.
-    ctx.fillStyle = 'rgba(5, 8, 13, 0.75)';
+    ctx.fillStyle = 'rgba(3, 8, 14, 0.8)';
     ctx.fillText(text, x + 1, y + 1);
-    ctx.fillStyle = active ? 'rgba(236, 243, 252, 0.96)' : 'rgba(200, 214, 230, 0.75)';
+    ctx.fillStyle = active ? 'rgba(226, 248, 255, 0.97)' : 'rgba(168, 208, 232, 0.72)';
     ctx.fillText(text, x, y);
   }
   ctx.restore();
+}
+
+/** Scanlines, a drifting refresh band and an edge vignette: the projection. */
+function drawOverlay(now) {
+  if (scanlinePattern) {
+    ctx.fillStyle = scanlinePattern;
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  if (animating) {
+    const bandY = ((now / 26) % (height + 260)) - 130;
+    const band = ctx.createLinearGradient(0, bandY - 60, 0, bandY + 60);
+    band.addColorStop(0, 'rgba(120, 220, 255, 0)');
+    band.addColorStop(0.5, 'rgba(120, 220, 255, 0.045)');
+    band.addColorStop(1, 'rgba(120, 220, 255, 0)');
+    ctx.fillStyle = band;
+    ctx.fillRect(0, bandY - 60, width, 120);
+  }
+
+  const vignette = ctx.createRadialGradient(
+    width / 2, height / 2, Math.min(width, height) * 0.32,
+    width / 2, height / 2, Math.max(width, height) * 0.78,
+  );
+  vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  vignette.addColorStop(1, 'rgba(0, 0, 0, 0.55)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, width, height);
+}
+
+function drawEmptyState() {
+  ctx.fillStyle = 'rgba(150, 200, 230, 0.4)';
+  ctx.font = '600 13px "Saira Condensed", "Arial Narrow", sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('NO TELEMETRY', width / 2, height / 2);
 }
 
 function offscreen(p, margin = 8) {
@@ -729,10 +997,10 @@ function planetAt(sx, sy) {
   for (const planet of state.planets) {
     const p = project(worldOf(planet));
     if (!p.visible) continue;
-    const radius = Math.max(1.6, PLANET_RADIUS * p.scale);
+    const radius = Math.max(1.3, PLANET_RADIUS * p.scale);
     const distance = Math.hypot(p.x - sx, p.y - sy);
     // Nearest to the camera wins a tie, matching what is drawn on top.
-    if (distance < radius + HIT_PADDING && p.depth < bestDepth) {
+    if (distance < radius * 2 + HIT_PADDING && p.depth < bestDepth) {
       best = planet;
       bestDepth = p.depth;
     }
@@ -764,7 +1032,6 @@ function orbitBy(dAzimuth, dElevation) {
  */
 function shiftTarget(dxScreen, dyScreen) {
   const perPixel = view.distance / focal;
-  // Movement along the plane, from the camera's right and its heading.
   const heading = normalize({ x: camera.forward.x, y: 0, z: camera.forward.z });
   const right = camera.right;
   view.target.x -= (right.x * dxScreen - heading.x * dyScreen) * perPixel;
@@ -774,7 +1041,6 @@ function shiftTarget(dxScreen, dyScreen) {
   view.target.z = clamp(view.target.z, -limit, limit);
 }
 
-/** Pan across the plane, in screen-relative directions at the current scale. */
 function panBy(dxScreen, dyScreen) {
   userMovedView = true;
   shiftTarget(dxScreen, dyScreen);
@@ -794,7 +1060,7 @@ export function focusPlanet(index, { zoom } = {}) {
 
 export function resetView() {
   userMovedView = false;
-  view.azimuth = -0.6;
+  view.azimuth = -0.55;
   view.elevation = DEFAULT_ELEVATION;
   view.target = { x: 0, y: 0, z: 0 };
   view.distance = BASE_DISTANCE;
@@ -802,7 +1068,7 @@ export function resetView() {
   needsDraw = true;
 }
 
-/** Look straight down: the old flat map, for when perspective is in the way. */
+/** Look straight down: the flat map, for when perspective is in the way. */
 export function topDownView() {
   userMovedView = true;
   view.elevation = MAX_ELEVATION;
@@ -834,8 +1100,6 @@ function fitToPlanets() {
 
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     let seen = 0;
-    // Super Earth sits at the origin and is not in the planet list, but it
-    // must be inside the frame.
     for (const point of [{ x: 0, y: 0, z: 0 }, ...planets.map((pl) => worldOf(pl))]) {
       const p = project(point);
       if (!p.visible) continue;
@@ -877,7 +1141,6 @@ function bindPointer() {
     canvas.setPointerCapture(event.pointerId);
     pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (pointers.size === 1) {
-      // Shift or a secondary button pans; a plain drag orbits.
       mode = (event.shiftKey || event.button === 1 || event.button === 2) ? 'pan' : 'orbit';
       moved = 0;
       last = { x: event.clientX, y: event.clientY };
@@ -894,7 +1157,6 @@ function bindPointer() {
       pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     }
 
-    // Two fingers: pinch to zoom, drag the midpoint to pan.
     if (pointers.size === 2) {
       const spread = pointerSpread(pointers);
       const mid = pointerMidpoint(pointers);

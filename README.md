@@ -157,10 +157,17 @@ drawn from noise.
 
 ## The galactic map
 
-The map is a perspective 3D view of the galactic plane, drawn with a small
-software projector onto a 2D canvas — no WebGL and no dependency, because the
-scene is a few thousand points and lines and each planet bakes to a cached
-sprite.
+The map is styled after the game's holographic war table: a cyan projection of
+the galactic plane on a dark table, viewed obliquely, with sectors drawn as
+glowing hulls, supply lines strung between worlds, and planets rendered as
+additive light rather than lit rock. Everything luminous composites with
+`lighter`, which is what makes overlapping glow read as a projection instead of
+as stacked stickers. Scanlines, a drifting refresh band, suspended dust motes
+and a vignette finish it.
+
+It is drawn with a small software projector onto a 2D canvas — no WebGL and no
+dependency, because the scene is a few thousand points and lines and each planet
+bakes to a cached sprite.
 
 **On the third dimension, honestly.** The API publishes two coordinates per
 planet and no depth. Scattering worlds along an invented z-axis would look like
@@ -169,17 +176,21 @@ plane. What the third dimension carries instead is real:
 
 - the plane itself, free to orbit and tilt, which is how the galaxy is laid out
   in game;
-- **height above the plane encodes deployed divers**, so busy fronts physically
-  rise out of the map. Every raised planet keeps a footprint and a stalk on the
-  plane, so its real position is never ambiguous;
+- the game's map is flat, and what floats above it are the objective markers on
+  contested worlds — so **only planets with a live campaign lift**, scaled by
+  garrison, each keeping a footprint ring and tether below it so its real
+  position stays unambiguous;
 - attack arrows arc over the plane rather than lying flat on it, which keeps a
   front line readable at any tilt instead of vanishing edge-on.
 
-Planet bodies are shaded by **biome** and rimmed in their controlling faction's
-colour, lit from a fixed direction in world space so the terminators swing
-together as the camera orbits. Active campaigns pulse with a liberation arc,
-supply lines come from each planet's `waypoints`, and labels are collision-tested
-so a dense sector does not smear into an unreadable mass.
+Planets are points of light: a hot core tinted by **biome**, a bloom in their
+controlling faction's colour, and a containment ring. Contested worlds burn in
+their faction colour outright, the way the game flags a fight, and pulse with a
+liberation arc. Sector hulls are convex hulls over each sector's worlds, rounded
+through their edge midpoints so a region reads as a region. Supply lines come
+from each planet's `waypoints`. Sector and planet labels are both
+collision-tested — largest sector first, nearest planet first — so a crowded arm
+does not smear into an unreadable mass.
 
 | Action | Control |
 | --- | --- |
