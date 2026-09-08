@@ -15,6 +15,9 @@ import { initPlanetPanel } from './ui/planetPanel.js';
 import { initStats } from './ui/stats.js';
 import { initDispatches } from './ui/dispatches.js';
 import { initStatus } from './ui/status.js';
+import { initAlerts } from './ui/alerts.js';
+import { initBoot } from './ui/boot.js';
+import { chirp, isEnabled, loadPreference, setEnabled } from './audio.js';
 
 let pollTimer = null;
 
@@ -124,6 +127,56 @@ function bindLayout() {
   }
 }
 
+/**
+ * "WAR DAY 1,324" from the war's real start date, which the API already sends
+ * and nothing displayed until now.
+ */
+function bindWarDay() {
+  const node = document.getElementById('war-day');
+  if (!node) return;
+  subscribe(() => {
+    const started = state.war?.started;
+    if (!started) {
+      node.hidden = true;
+      return;
+    }
+    const days = Math.max(1, Math.floor((Date.now() - started) / 86400000) + 1);
+    node.textContent = `· WAR DAY ${days.toLocaleString('en-US')}`;
+    node.hidden = false;
+  });
+}
+
+function bindAudio() {
+  const button = document.getElementById('audio-toggle');
+  if (!button) return;
+  const icon = button.querySelector('[data-audio-icon]');
+
+  const paint = () => {
+    const on = isEnabled();
+    button.setAttribute('aria-pressed', String(on));
+    button.title = on ? 'Sound: on' : 'Sound: off';
+    button.classList.toggle('is-active', on);
+    if (icon) icon.textContent = on ? '🔊' : '🔇';
+  };
+
+  // A stored preference cannot start audio on its own: browsers keep a context
+  // suspended until the page has been interacted with. Arm it on the first
+  // gesture so the choice survives a reload without a second click on the icon.
+  if (loadPreference()) {
+    const resume = () => setEnabled(true);
+    window.addEventListener('pointerdown', resume, { once: true });
+    window.addEventListener('keydown', resume, { once: true });
+  }
+  paint();
+
+  button.addEventListener('click', () => {
+    // Toggling is the user gesture the audio context needs to start.
+    setEnabled(!isEnabled());
+    paint();
+    if (isEnabled()) chirp();
+  });
+}
+
 function boot() {
   initStatus();
   initMajorOrder();
@@ -131,8 +184,12 @@ function boot() {
   initPlanetPanel();
   initStats();
   initDispatches();
+  initAlerts();
+  bindWarDay();
+  bindAudio();
   bindLayout();
   bindLifecycle();
+  initBoot();
 
   document.body.classList.remove('is-booting');
 

@@ -7,6 +7,7 @@
 import * as api from './api.js';
 import { ENDPOINTS } from './config.js';
 import { recordSamples, setScope } from './trend.js';
+import { diffSnapshots, snapshotOf } from './events.js';
 import {
   normalizeWar, normalizePlanet, normalizeCampaign, normalizeEvent,
   normalizeAssignment, normalizeDispatch, asArray,
@@ -33,6 +34,8 @@ export const state = {
   errors: [],
   /** Index of the planet shown in the detail panel, or null. */
   selectedPlanet: null,
+  /** Events detected on the most recent refresh; consumed by the alert stack. */
+  events: [],
   refreshing: false,
 };
 
@@ -52,6 +55,12 @@ export function notify(reason = 'update') {
       console.error('[super-earth-watch] listener failed', error);
     }
   }
+}
+
+/** Drop the diff baseline — used when the data source changes underneath us. */
+export function resetEventBaseline() {
+  lastSnapshot = null;
+  state.events = [];
 }
 
 export function selectPlanet(index) {
@@ -104,6 +113,7 @@ export async function refresh({ force = false } = {}) {
         status: entry.error.status ?? 0,
       }));
 
+    detectEvents();
     state.lastUpdated = Date.now();
 
     // One write per cycle, once every feed has had its turn, so the stored
@@ -156,6 +166,32 @@ function updateInterimStatus() {
     state.status = 'degraded';
   } else if (Object.keys(ENDPOINTS).every((key) => state.sources[key])) {
     state.status = 'ready';
+  }
+}
+
+/**
+ * The last settled view of the war, for the next diff to compare against.
+ * Held in memory only: a snapshot persisted across reloads would replay hours
+ * of stale changes as if they had just happened.
+ */
+let lastSnapshot = null;
+
+/**
+ * Work out what changed since the previous completed refresh.
+ *
+ * Runs once per cycle, after every feed has settled — inside rebuildPlanets it
+ * would fire three times against half-loaded state and report campaigns opening
+ * and closing that never did. The first call only primes: on a cold start every
+ * planet and dispatch would otherwise look brand new.
+ */
+function detectEvents() {
+  if (!state.planets.length) return;
+  const snapshot = snapshotOf(state);
+  const events = diffSnapshots(lastSnapshot, snapshot);
+  lastSnapshot = snapshot;
+  if (events.length) {
+    state.events = events;
+    notify('events');
   }
 }
 

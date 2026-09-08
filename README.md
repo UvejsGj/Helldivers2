@@ -97,17 +97,45 @@ js/
   mock.js         generated offline galaxy, in the API's own shapes
   normalize.js    defensive parsing + derived attacks and supply lines
   trend.js        liberation rate over time, and what it projects
+  events.js       what changed between two polls (pure, testable)
+  audio.js        synthesised cues; no asset files
   state.js        one snapshot of the war + subscribe/notify bus
   format.js       number, countdown and dispatch formatting
   app.js          bootstrap, auto-refresh loop, deep links
   ui/
     majorOrder.js  status.js  map.js  planetPanel.js  stats.js  dispatches.js
+    alerts.js  boot.js
 test/
-  normalize.test.mjs  format.test.mjs  trend.test.mjs
+  normalize.test.mjs  format.test.mjs  trend.test.mjs  events.test.mjs
 ```
 
 The data flows one way: `api` → `normalize` → `state` → views. Views subscribe to
 the store and re-render; nothing outside `state.js` mutates state.
+
+## Immersion
+
+**Live event alerts.** The dashboard re-polls every twenty seconds and swaps its
+state wholesale, so a planet changing hands used to pass unnoticed. `events.js`
+compares consecutive snapshots and reports what actually changed — planets
+liberated or lost, defences opening and being held, offensives opening, new
+Major Orders, new dispatches. Every event is a difference between two real
+payloads. Detection runs once per settled refresh, not inside the planet
+rebuild, which runs three times a cycle and would report campaigns opening and
+closing that never did. The first observation only primes: on a cold start
+every planet would otherwise look brand new.
+
+**Uplink sequence.** A cold-open terminal, once per session, whose lines light
+up as each feed genuinely lands — a progress indicator in costume rather than
+theatre. Skippable, dismisses on a hard deadline, and reports `FAIL` for a feed
+that never arrives rather than hanging.
+
+**Sound.** Synthesised with WebAudio oscillators and shaped noise, so no asset
+files and no dependency: a room-tone drone, an uplink chirp, a klaxon pitched by
+how bad the news is, teletype clicks. Off by default behind a speaker toggle —
+browsers block audio until a gesture anyway, and a dashboard left on a second
+monitor must not start making noise on its own.
+
+**War day.** `WAR DAY 1,324` in the masthead, from the war's real start date.
 
 ### Notes on a few decisions
 

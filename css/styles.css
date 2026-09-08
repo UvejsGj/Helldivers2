@@ -47,6 +47,14 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* The `hidden` attribute has to win.
+   A UA rule sets `[hidden] { display: none }`, but any author rule that sets
+   display beats it regardless of specificity — so a component styled
+   `display: grid` stays laid out while marked hidden. For the full-screen boot
+   overlay that meant an invisible but opaque sheet covering the whole
+   dashboard and swallowing every click. */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
@@ -1133,4 +1141,180 @@ a:hover { color: #ffd84a; }
   .map__zoom { display: none; }
   .map__tools { gap: 4px; }
   .panel--map .btn--tiny { padding: 4px 6px; letter-spacing: 0.06em; }
+}
+
+/* ==========================================================================
+   UPLINK SEQUENCE
+   ========================================================================== */
+
+.boot {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(900px 600px at 50% 45%, rgba(12, 32, 48, 0.96), rgba(3, 6, 10, 0.99));
+  transition: opacity 380ms ease;
+}
+.boot.is-leaving { opacity: 0; pointer-events: none; }
+
+.boot__inner {
+  width: min(440px, calc(100vw - 40px));
+  padding: 26px 28px 22px;
+  border: 1px solid var(--line-bright);
+  border-left: 3px solid var(--gold);
+  background: rgba(6, 11, 18, 0.92);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.7);
+}
+
+.boot__brand {
+  margin: 0 0 4px;
+  font-size: 13px; font-weight: 800; letter-spacing: 0.22em;
+  color: var(--gold);
+}
+
+.boot__line--muted {
+  margin: 0 0 16px;
+  font-size: 10px; letter-spacing: 0.18em;
+  color: var(--ink-faint);
+}
+
+.boot__list { list-style: none; margin: 0 0 14px; padding: 0; display: grid; gap: 6px; }
+
+.boot__item {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 12px;
+  font-size: 11px; letter-spacing: 0.12em;
+  color: var(--ink-faint);
+  opacity: 0.55;
+  transition: opacity 200ms ease, color 200ms ease;
+}
+.boot__item.is-ok { opacity: 1; color: var(--ink-dim); }
+.boot__item.is-failed { opacity: 1; color: var(--warn); }
+.boot__item.is-ok .boot__status { color: var(--ok); }
+.boot__item.is-failed .boot__status { color: var(--warn); }
+.boot__status { font-size: 11px; }
+
+.boot__done {
+  margin: 0;
+  font-size: 13px; font-weight: 700; letter-spacing: 0.2em;
+  color: var(--ok);
+}
+
+.boot__skip {
+  appearance: none;
+  margin-top: 14px;
+  border: 1px solid var(--line-bright);
+  background: transparent;
+  color: var(--ink-faint);
+  font-family: var(--font-display);
+  font-size: 10px; letter-spacing: 0.2em;
+  padding: 5px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+.boot__skip:hover { color: var(--ink); border-color: var(--gold-dim); }
+
+/* ==========================================================================
+   ALERT STACK
+   ========================================================================== */
+
+/* Bottom-right rather than top: the Major Order banner is the headline of the
+   page, and a toast landing on its countdown covers the one number someone is
+   most likely to be watching. Newest sits nearest the corner. */
+.alerts {
+  position: fixed;
+  bottom: clamp(12px, 3vw, 24px);
+  right: clamp(12px, 3vw, 28px);
+  z-index: 85;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  width: min(320px, calc(100vw - 24px));
+  pointer-events: none;
+}
+
+.alert {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px 10px 10px 12px;
+  border: 1px solid var(--line-bright);
+  border-left: 3px solid var(--accent, var(--line-bright));
+  border-radius: var(--radius);
+  background: rgba(8, 13, 20, 0.96);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+  animation: alert-in 260ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: opacity 300ms ease, transform 300ms ease;
+}
+
+.alert.is-leaving { opacity: 0; transform: translateX(20px); }
+.alert.is-clickable { cursor: pointer; }
+.alert.is-clickable:hover { border-color: var(--accent, var(--gold-dim)); background: rgba(14, 22, 32, 0.97); }
+
+@keyframes alert-in {
+  from { opacity: 0; transform: translateX(26px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.alert--critical { --accent: var(--bad); }
+.alert--bad { --accent: var(--warn); }
+.alert--good { --accent: var(--ok); }
+.alert--info { --accent: var(--humans); }
+
+.alert__mark {
+  font-size: 14px;
+  line-height: 1.2;
+  color: var(--accent);
+}
+
+.alert__title {
+  margin: 0;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.1em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.alert__detail {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--ink-faint);
+  line-height: 1.35;
+}
+
+.alert__close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 3px;
+  cursor: pointer;
+}
+.alert__close:hover { color: var(--ink); }
+
+@media (max-width: 899px) {
+  .alerts {
+    bottom: 12px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+  }
+  /* The planet sheet owns the bottom of the screen when it is open. */
+  .shell.has-selection ~ .alerts, body:has(.shell.has-selection) .alerts { display: none; }
+}
+
+/* ==========================================================================
+   MASTHEAD ADDITIONS
+   ========================================================================== */
+
+.masthead__day { color: var(--gold-dim); letter-spacing: 0.14em; font-size: 10px; }
+#audio-toggle.is-active { border-color: var(--gold-dim); color: var(--gold); }
+
+@media (prefers-reduced-motion: reduce) {
+  .alert { animation: none; }
 }

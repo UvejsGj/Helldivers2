@@ -8,7 +8,7 @@
  */
 
 import { getSource, isAnonymous, setSource } from '../api.js';
-import { refresh, state, subscribe } from '../state.js';
+import { refresh, resetEventBaseline, state, subscribe } from '../state.js';
 import { ENDPOINTS, POLL_INTERVAL } from '../config.js';
 import { escapeHtml, relativeTime } from '../format.js';
 
@@ -113,6 +113,9 @@ function switchSource(next) {
   if (next !== 'live' && next !== 'mock') return;
   if (next === getSource()) return;
   setSource(next);
+  // The other source is a different galaxy; diffing across the switch would
+  // report every planet as having changed hands.
+  resetEventBaseline();
   // Clear the visible war so a stale live snapshot cannot linger under the
   // mock data (or the other way round) while the first fetch is in flight.
   state.status = 'boot';

@@ -26,6 +26,12 @@
 
 <div class="crt" aria-hidden="true"></div>
 
+<!-- Uplink sequence: shown once per session while the feeds connect. -->
+<div class="boot" id="boot" hidden></div>
+
+<!-- War events detected between polls. Polite: it announces, never traps focus. -->
+<div class="alerts" id="alerts" role="log" aria-live="polite" aria-label="War alerts"></div>
+
 <header class="masthead">
   <div class="masthead__brand">
     <span class="masthead__sigil" aria-hidden="true">
@@ -36,7 +42,9 @@
     </span>
     <div class="masthead__titles">
       <h1 class="masthead__title">SUPER EARTH WATCH</h1>
-      <p class="masthead__sub">GALACTIC WAR COMMAND · MINISTRY OF TRUTH BROADCAST</p>
+      <p class="masthead__sub">GALACTIC WAR COMMAND · MINISTRY OF TRUTH BROADCAST
+        <span class="masthead__day mono" id="war-day" hidden></span>
+      </p>
     </div>
   </div>
 
@@ -45,6 +53,11 @@
       <button type="button" class="toggle__btn" data-source="live" aria-pressed="true">LIVE</button>
       <button type="button" class="toggle__btn" data-source="mock" aria-pressed="false">ARCHIVE</button>
     </div>
+    <button type="button" class="btn btn--icon" id="audio-toggle"
+            aria-pressed="false" title="Sound: off">
+      <span class="sr-only">Toggle sound</span>
+      <span aria-hidden="true" data-audio-icon>🔇</span>
+    </button>
     <button type="button" class="btn btn--icon" id="refresh-now" title="Force refresh (R)">
       <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
         <path d="M20 11a8 8 0 10-2.3 5.7M20 5v6h-6" fill="none" stroke="currentColor"
