@@ -183,10 +183,10 @@ plane. What the third dimension carries instead is real:
 - attack arrows arc over the plane rather than lying flat on it, which keeps a
   front line readable at any tilt instead of vanishing edge-on.
 
-Planets are points of light: a hot core tinted by **biome**, a bloom in their
-controlling faction's colour, and a containment ring. Contested worlds burn in
-their faction colour outright, the way the game flags a fight, and pulse with a
-liberation arc. Sector hulls are convex hulls over each sector's worlds, rounded
+Planets are points of light in their **controlling faction's colour** — a hot
+core, a bloom in the same hue, a containment ring — so territory reads at a
+glance, which is the one thing this view exists to show. Contested worlds burn
+the same hue brighter and pulse with a liberation arc. Sector hulls are convex hulls over each sector's worlds, rounded
 through their edge midpoints so a region reads as a region. Supply lines come
 from each planet's `waypoints`. Sector and planet labels are both
 collision-tested — largest sector first, nearest planet first — so a crowded arm

@@ -23,7 +23,7 @@
  * one drawImage per world.
  */
 
-import { biomeColor, faction } from '../config.js';
+import { faction } from '../config.js';
 import { selectPlanet, state, subscribe } from '../state.js';
 import { compact, percent } from '../format.js';
 
@@ -184,8 +184,10 @@ const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
  * gradients fresh for 260 worlds every frame is what would actually cost
  * something here; drawImage of a cached bitmap costs nothing.
  *
- * The sprite is additive light: a hot near-white core, a faction-tinted bloom,
- * and a containment ring — a projected point of light, not a lit sphere.
+ * The sprite is additive light: a hot near-white core falling to the faction's
+ * colour, a bloom in the same hue, and a containment ring — a projected point
+ * of light, not a lit sphere. Only a handful of sprites exist, one per faction
+ * per contested state.
  */
 const SPRITE_SIZE = 128;
 const CORE_FRACTION = 0.115;
@@ -212,7 +214,7 @@ function planetSprite(coreColor, glowColor) {
   g.fillStyle = bloom;
   g.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);
 
-  // Core: hot centre falling to the planet's own tint, so biome still reads.
+  // Core: a hot centre falling to the faction's colour.
   const body = g.createRadialGradient(mid, mid, 0, mid, mid, core);
   body.addColorStop(0, '#ffffff');
   body.addColorStop(0.35, lighten(coreColor, 0.55));
@@ -802,9 +804,11 @@ function drawPlanets(now) {
       ctx.globalAlpha = alpha;
     }
 
-    // Biome tints the core; the faction owns the glow. Contested worlds burn
-    // in their faction colour outright, which is how the game flags a fight.
-    const core = active ? lighten(info.color, 0.35) : biomeColor(planet.biome);
+    // Colour is allegiance, nothing else. Tinting quiet worlds by biome gave
+    // the map a different hue per planet and made territory impossible to read
+    // at a glance, which is the one thing this view exists to show. Contested
+    // worlds take the same hue burning brighter.
+    const core = active ? lighten(info.color, 0.4) : info.color;
     const sprite = planetSprite(core, info.color);
     const size = (radius / CORE_FRACTION) * (active ? 1.15 : 1);
     ctx.drawImage(sprite, p.x - size / 2, p.y - size / 2, size, size);

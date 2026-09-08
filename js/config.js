@@ -130,39 +130,6 @@ export const FACTIONS = {
 export const faction = (key) => FACTIONS[key] || FACTIONS.unknown;
 
 /**
- * Surface colours by biome, so a planet body carries real information rather
- * than every world being the same coloured dot. Matched by keyword because the
- * API's biome names vary ("Ice Waste", "Winter", "Frozen"), and anything
- * unrecognised falls back to a neutral rock.
- */
-const BIOME_COLORS = [
-  [/rain|jungle|forest|swamp|marsh/, '#3f7d4a'],
-  [/desert|sand|arid|dune/, '#c9a15b'],
-  [/ice|winter|frozen|snow|tundra|glacier/, '#9fc6dd'],
-  [/moon|barren|airless|rock|mesa|canyon/, '#8d8578'],
-  [/toxic|acid|poison/, '#7fae3a'],
-  [/ash|volcan|cinder|lava|fire|magma/, '#a8442c'],
-  [/ocean|sea|water|aqua/, '#3b7fa8'],
-  [/high|plain|grass|savanna|steppe/, '#7f9a52'],
-  [/crimson|blood|red/, '#a33b46'],
-  [/city|urban|colony|mega/, '#8892a3'],
-  [/haunted|dark|shroud/, '#5a4a72'],
-];
-
-const BIOME_DEFAULT = '#7d7468';
-
-/** Surface colour for a planet's biome. */
-export function biomeColor(biome) {
-  const name = (biome && biome.name ? String(biome.name) : '').toLowerCase();
-  if (name) {
-    for (const [pattern, color] of BIOME_COLORS) {
-      if (pattern.test(name)) return color;
-    }
-  }
-  return BIOME_DEFAULT;
-}
-
-/**
  * Data source. 'live' hits the API; 'mock' runs entirely offline against the
  * generated dataset in mock.js. The choice persists in localStorage, and
  * `?mock=1` in the URL forces mock mode for a single visit.
