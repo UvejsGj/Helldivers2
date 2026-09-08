@@ -1109,3 +1109,28 @@ a:hover { color: #ffd84a; }
 .status[data-status="restored"] .status__lamp { background: var(--warn); color: var(--warn); }
 .status[data-status="restored"] .status__label { color: var(--warn); }
 .status__anon { color: var(--warn); cursor: help; }
+
+/* Legend note for the map's height encoding — a separate row, so the faction
+   swatches stay on one line and the explanation does not read as a fifth one. */
+.map__legend-note {
+  flex-basis: 100%;
+  padding-top: 3px;
+  border-top: 1px solid var(--line);
+  margin-top: 2px;
+  color: var(--ink-faint);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+
+@media (max-width: 560px) { .map__legend-note { display: none; } }
+
+/* The map header gained a control, and at phone widths the title was wrapping
+   to a second line to make room. The zoom readout is the one piece the map
+   itself already communicates, so it gives way first. */
+@media (max-width: 620px) {
+  .panel--map .panel__title { white-space: nowrap; }
+  .map__zoom { display: none; }
+  .map__tools { gap: 4px; }
+  .panel--map .btn--tiny { padding: 4px 6px; letter-spacing: 0.06em; }
+}

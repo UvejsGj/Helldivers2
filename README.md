@@ -155,23 +155,48 @@ because campaigns genuinely stall and restart. Below three samples or twelve
 minutes of span it reports nothing at all rather than a confident-looking number
 drawn from noise.
 
-## Map controls
+## The galactic map
+
+The map is a perspective 3D view of the galactic plane, drawn with a small
+software projector onto a 2D canvas — no WebGL and no dependency, because the
+scene is a few thousand points and lines and each planet bakes to a cached
+sprite.
+
+**On the third dimension, honestly.** The API publishes two coordinates per
+planet and no depth. Scattering worlds along an invented z-axis would look like
+data and be nothing of the kind, so every planet sits at its true position on the
+plane. What the third dimension carries instead is real:
+
+- the plane itself, free to orbit and tilt, which is how the galaxy is laid out
+  in game;
+- **height above the plane encodes deployed divers**, so busy fronts physically
+  rise out of the map. Every raised planet keeps a footprint and a stalk on the
+  plane, so its real position is never ambiguous;
+- attack arrows arc over the plane rather than lying flat on it, which keeps a
+  front line readable at any tilt instead of vanishing edge-on.
+
+Planet bodies are shaded by **biome** and rimmed in their controlling faction's
+colour, lit from a fixed direction in world space so the terminators swing
+together as the camera orbits. Active campaigns pulse with a liberation arc,
+supply lines come from each planet's `waypoints`, and labels are collision-tested
+so a dense sector does not smear into an unreadable mass.
 
 | Action | Control |
 | --- | --- |
-| Pan | Drag, or arrow keys (Shift for larger steps) |
+| Orbit | Drag, or arrow keys (Shift for larger steps) |
+| Pan | Shift-drag, right-drag, two-finger drag, or Alt + arrows |
 | Zoom | Scroll, pinch, `+` / `-`, or double-click |
+| Look straight down | `TOP` button, or `T` |
 | Reset / refit | `RESET` button, or `0` |
 | Inspect a planet | Click it, or pick one from Active Fronts |
 | Close the detail panel | `Esc` |
 | Force a refresh | `R` |
 
-The map frames itself to the planets on first load and refits on resize, but
-stops doing so once you have panned or zoomed — your framing is yours to keep.
-
-Planets are colour-coded by controlling faction, sized halos show diver presence,
-active campaigns pulse with a liberation arc, and supply lines are drawn from
-each planet's `waypoints`.
+`TOP` flattens the view to a plain overhead map for when perspective is in the
+way. The map frames itself to the planets on first load and refits on resize —
+by measuring the projected bounds rather than assuming a radius, since under
+tilt the galaxy projects as an off-centre ellipse — but stops once you have
+moved the camera. Your framing is yours to keep.
 
 ## Accessibility and responsiveness
 

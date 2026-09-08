@@ -74,21 +74,24 @@
           <span class="map__zoom mono" id="zoom-readout">1.00×</span>
           <button type="button" class="btn btn--tiny" id="map-zoom-out" aria-label="Zoom out">−</button>
           <button type="button" class="btn btn--tiny" id="map-zoom-in" aria-label="Zoom in">+</button>
+          <button type="button" class="btn btn--tiny" id="map-top"
+                  title="Look straight down (T)">TOP</button>
           <button type="button" class="btn btn--tiny" id="map-reset">RESET</button>
         </div>
       </header>
 
       <div class="map">
         <canvas id="galaxy" tabindex="0"
-                aria-label="Galactic map of the Helldivers 2 war. Use arrow keys to pan, plus and minus to zoom."></canvas>
+                aria-label="Three-dimensional galactic map of the Helldivers 2 war. Arrow keys orbit the view, alt with arrow keys pans, plus and minus zoom, T looks straight down, 0 resets. Planets are also listed under Active Fronts."></canvas>
         <div class="tip" id="map-tooltip" hidden></div>
         <div class="map__legend">
           <span><i style="background:#3d8bff"></i>Super Earth</span>
           <span><i style="background:#ffa41f"></i>Terminids</span>
           <span><i style="background:#ff4444"></i>Automatons</span>
           <span><i style="background:#a271ff"></i>Illuminate</span>
+          <span class="map__legend-note">Height above the plane = divers deployed</span>
         </div>
-        <p class="map__hint">DRAG TO PAN · SCROLL TO ZOOM · CLICK A WORLD</p>
+        <p class="map__hint">DRAG TO ORBIT · SHIFT-DRAG TO PAN · SCROLL TO ZOOM</p>
       </div>
     </section>
 
