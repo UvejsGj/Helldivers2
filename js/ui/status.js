@@ -106,6 +106,11 @@ function syncToggle() {
 }
 
 function switchSource(next) {
+  // The container carries a data-source attribute of its own, so a click on the
+  // padding between the buttons resolves to it and arrives here as undefined.
+  // Without this guard that would reset the status to 'boot' and force a
+  // refresh while changing nothing.
+  if (next !== 'live' && next !== 'mock') return;
   if (next === getSource()) return;
   setSource(next);
   // Clear the visible war so a stale live snapshot cannot linger under the
