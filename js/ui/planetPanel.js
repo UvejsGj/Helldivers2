@@ -133,7 +133,7 @@ function trendHtml(planet) {
       <div class="trend trend--waiting">
         <span class="trend__label">RATE OF ADVANCE</span>
         <span class="trend__value mono">MEASURING…</span>
-        <p class="trend__note">Needs a few more polls before a rate can be read.</p>
+        <p class="trend__note">Awaiting further readings.</p>
       </div>`;
   }
 

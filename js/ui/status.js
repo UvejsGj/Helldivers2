@@ -86,8 +86,7 @@ function renderOutage() {
         <button type="button" class="btn" data-outage-mock>VIEW ARCHIVE FOOTAGE</button>
       </div>
       <p class="outage__hint">
-        Archive footage is a generated sample of the war, for when the live feed is
-        unreachable. Retries continue automatically every ${Math.round(POLL_INTERVAL / 1000)}s.
+        Retrying every ${Math.round(POLL_INTERVAL / 1000)}s.
       </p>
     </div>`;
 

@@ -246,8 +246,7 @@ moved the camera. Your framing is yours to keep.
 - The canvas is keyboard-navigable, and the Active Fronts list is a keyboard- and
   screen-reader-accessible route to every planet with a live campaign.
 
-## Licence and attribution
+## Credits
 
-Unofficial fan project. Not affiliated with Arrowhead Game Studios or Sony.
-Game data belongs to its respective owners; thanks to the maintainers of the
-community API.
+Data from the [Helldivers 2 community API](https://helldivers-2.github.io/api/) —
+thanks to its maintainers.
