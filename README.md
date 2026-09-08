@@ -211,14 +211,23 @@ plane. What the third dimension carries instead is real:
 - attack arrows arc over the plane rather than lying flat on it, which keeps a
   front line readable at any tilt instead of vanishing edge-on.
 
-Planets are points of light in their **controlling faction's colour** — a hot
-core, a bloom in the same hue, a containment ring — so territory reads at a
-glance, which is the one thing this view exists to show. Contested worlds burn
-the same hue brighter and pulse with a liberation arc. Sector hulls are convex hulls over each sector's worlds, rounded
-through their edge midpoints so a region reads as a region. Supply lines come
-from each planet's `waypoints`. Sector and planet labels are both
-collision-tested — largest sector first, nearest planet first — so a crowded arm
-does not smear into an unreadable mass.
+**Territory is drawn on a polar grid**, the way the in-game chart divides the
+galaxy: concentric rings crossed by radial spokes, every cell a quadrilateral
+bounded by two arcs and two radii. Each cell takes the faction holding most of
+the planets inside it, which gives a front its blocky, stepped edge instead of a
+smooth blob. Two shades per faction, keyed on the sector name, keep neighbouring
+holdings distinct. Only enemy-held cells are filled — Super Earth space stays
+open, so what reads at a glance is how far the enemy has come.
+
+Wedge and band counts are picked so cells come out roughly square at mid-radius:
+at r = 0.6, an arc of 2π/24 is about the length of one of six bands across the
+disc.
+
+Planets are dots in their controlling faction's colour. Contested worlds burn
+brighter and pulse with a liberation arc. Supply lines come from each planet's
+`waypoints`. Sector and planet labels are both collision-tested — largest sector
+first, nearest planet first — so a crowded arm does not smear into an unreadable
+mass.
 
 | Action | Control |
 | --- | --- |
@@ -231,8 +240,8 @@ does not smear into an unreadable mass.
 | Close the detail panel | `Esc` |
 | Force a refresh | `R` |
 
-`TOP` flattens the view to a plain overhead map for when perspective is in the
-way. The map frames itself to the planets on first load and refits on resize —
+The map opens overhead, as the chart is meant to be read; drag tilts it into
+perspective and `TOP` returns it. The map frames itself to the planets on first load and refits on resize —
 by measuring the projected bounds rather than assuming a radius, since under
 tilt the galaxy projects as an off-centre ellipse — but stops once you have
 moved the camera. Your framing is yours to keep.
