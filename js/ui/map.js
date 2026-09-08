@@ -43,8 +43,8 @@ const FOV = 42 * (Math.PI / 180);
 /** Elevation is clamped short of vertical: the poles are a singularity. */
 const MIN_ELEVATION = 4 * (Math.PI / 180);
 const MAX_ELEVATION = 88 * (Math.PI / 180);
-/** Low and oblique, the angle you read a table projection from. */
-const DEFAULT_ELEVATION = 27 * (Math.PI / 180);
+/** Overhead by default, the way a galaxy chart is read. Drag tilts it. */
+const DEFAULT_ELEVATION = MAX_ELEVATION;
 
 const PLANET_RADIUS = 0.013;
 const HIT_PADDING = 10;
@@ -61,7 +61,7 @@ const HOLO = {
 };
 
 const view = {
-  azimuth: -0.55,
+  azimuth: 0,
   elevation: DEFAULT_ELEVATION,
   distance: BASE_DISTANCE,
   /** Look-at point, on or near the galactic plane. */
@@ -207,18 +207,18 @@ function planetSprite(coreColor, glowColor) {
 
   // Outer bloom — the halo that makes crowded space glow rather than clutter.
   const bloom = g.createRadialGradient(mid, mid, core * 0.5, mid, mid, mid);
-  bloom.addColorStop(0, withAlpha(glowColor, 0.34));
-  bloom.addColorStop(0.22, withAlpha(glowColor, 0.11));
-  bloom.addColorStop(0.6, withAlpha(glowColor, 0.025));
+  bloom.addColorStop(0, withAlpha(glowColor, 0.30));
+  bloom.addColorStop(0.18, withAlpha(glowColor, 0.07));
+  bloom.addColorStop(0.5, withAlpha(glowColor, 0.015));
   bloom.addColorStop(1, withAlpha(glowColor, 0));
   g.fillStyle = bloom;
   g.fillRect(0, 0, SPRITE_SIZE, SPRITE_SIZE);
 
   // Core: a hot centre falling to the faction's colour.
   const body = g.createRadialGradient(mid, mid, 0, mid, mid, core);
-  body.addColorStop(0, '#ffffff');
-  body.addColorStop(0.35, lighten(coreColor, 0.55));
-  body.addColorStop(1, withAlpha(coreColor, 0.85));
+  body.addColorStop(0, lighten(coreColor, 0.7));
+  body.addColorStop(0.55, coreColor);
+  body.addColorStop(1, withAlpha(coreColor, 0.95));
   g.fillStyle = body;
   g.beginPath();
   g.arc(mid, mid, core, 0, Math.PI * 2);
@@ -320,77 +320,122 @@ const MOTES = (() => {
   return motes;
 })();
 
-/* ---------------------------------------------------------- sector shapes */
+/* --------------------------------------------------------- territory grid */
 
 /**
- * Sector hulls, the way the game groups worlds into named regions.
+ * The galaxy is divided the way the in-game map divides it: a polar grid of
+ * concentric rings crossed by radial spokes, so every cell is a quadrilateral
+ * bounded by two arcs and two radii. Territory is filled cell by cell, which is
+ * what gives a front its blocky, stepped edge instead of a smooth blob.
  *
- * Rebuilt only when the planet list changes: convex hulls over ~40 sectors are
- * cheap but pointless to recompute every frame.
+ * Wedge and band counts are chosen so cells come out roughly square at
+ * mid-radius: at r = 0.6, an arc of 2π/24 is about the same length as one of
+ * six bands spanning the disc.
  */
-let sectorShapes = [];
-let sectorSource = null;
+const GRID_WEDGES = 24;
+const GRID_BANDS = 6;
+const GRID_INNER = 0.06;
 
-function buildSectors(planets) {
+/** Only enemy-held cells are filled; Super Earth space stays open. */
+let territoryCells = [];
+let sectorLabelPoints = [];
+let gridOuter = 1.05;
+let territorySource = null;
+
+/**
+ * Assign every planet to a cell, then colour each cell by the faction holding
+ * most of the planets in it.
+ */
+function buildTerritory(planets) {
+  if (!planets.length) return { cells: [], labels: [], outer: 1.05 };
+
+  let maxRadius = 0.2;
+  for (const planet of planets) {
+    maxRadius = Math.max(maxRadius, Math.hypot(planet.position.x, planet.position.y));
+  }
+  const outer = maxRadius * 1.06;
+  const bandSize = (outer - GRID_INNER) / GRID_BANDS;
+
+  // Bucket planets into cells, tallying who holds them and which sector they
+  // belong to (the sector decides the cell's shade).
+  const buckets = new Map();
+  for (const planet of planets) {
+    const x = planet.position.x;
+    const z = -planet.position.y;
+    const radius = Math.hypot(x, z);
+    const band = Math.floor((radius - GRID_INNER) / bandSize);
+    if (band < 0 || band >= GRID_BANDS) continue;
+    const angle = (Math.atan2(z, x) + Math.PI * 2) % (Math.PI * 2);
+    const wedge = Math.floor((angle / (Math.PI * 2)) * GRID_WEDGES) % GRID_WEDGES;
+
+    const key = `${band}:${wedge}`;
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { band, wedge, owners: new Map(), sectors: new Map() };
+      buckets.set(key, bucket);
+    }
+    bucket.owners.set(planet.currentOwner, (bucket.owners.get(planet.currentOwner) || 0) + 1);
+    bucket.sectors.set(planet.sector, (bucket.sectors.get(planet.sector) || 0) + 1);
+  }
+
+  const cells = [];
+  for (const bucket of buckets.values()) {
+    const owner = topKey(bucket.owners);
+    // Super Earth space is left open, so the enemy's reach is what reads.
+    if (!owner || owner === 'humans' || owner === 'unknown') continue;
+    const sector = topKey(bucket.sectors) || '';
+    cells.push({
+      faction: owner,
+      // Two shades, keyed on the sector name, so neighbouring sectors separate
+      // instead of merging into one flat mass of colour.
+      shade: hashString(sector) % 2,
+      a0: (bucket.wedge / GRID_WEDGES) * Math.PI * 2,
+      a1: ((bucket.wedge + 1) / GRID_WEDGES) * Math.PI * 2,
+      r0: GRID_INNER + bucket.band * bandSize,
+      r1: GRID_INNER + (bucket.band + 1) * bandSize,
+    });
+  }
+
+  // Sector captions sit at the centroid of the sector's worlds.
   const bySector = new Map();
   for (const planet of planets) {
     const name = planet.sector || 'Unknown';
-    if (!bySector.has(name)) bySector.set(name, []);
-    bySector.get(name).push({ x: planet.position.x, z: -planet.position.y });
+    let entry = bySector.get(name);
+    if (!entry) { entry = { name, x: 0, z: 0, count: 0 }; bySector.set(name, entry); }
+    entry.x += planet.position.x;
+    entry.z += -planet.position.y;
+    entry.count += 1;
   }
+  const labels = [...bySector.values()]
+    .filter((e) => e.count >= 3)
+    .map((e) => ({ name: e.name, x: e.x / e.count, z: e.z / e.count, count: e.count }));
 
-  const shapes = [];
-  for (const [name, points] of bySector) {
-    if (points.length < 3) continue;
-    const hull = convexHull(points);
-    if (hull.length < 3) continue;
-
-    const centroid = hull.reduce(
-      (acc, p) => ({ x: acc.x + p.x / hull.length, z: acc.z + p.z / hull.length }),
-      { x: 0, z: 0 },
-    );
-    // Push the boundary clear of the worlds it encloses.
-    const padded = hull.map((p) => {
-      const dx = p.x - centroid.x;
-      const dz = p.z - centroid.z;
-      const length = Math.hypot(dx, dz) || 1;
-      return { x: p.x + (dx / length) * 0.045, z: p.z + (dz / length) * 0.045 };
-    });
-    shapes.push({ name, points: padded, centroid, size: points.length });
-  }
-  return shapes;
+  return { cells, labels, outer };
 }
 
-/** Andrew's monotone chain. Returns the hull counter-clockwise. */
-function convexHull(points) {
-  const sorted = [...points].sort((a, b) => (a.x - b.x) || (a.z - b.z));
-  if (sorted.length < 3) return sorted;
-  const cross2 = (o, a, b) => (a.x - o.x) * (b.z - o.z) - (a.z - o.z) * (b.x - o.x);
-
-  const lower = [];
-  for (const p of sorted) {
-    while (lower.length >= 2 && cross2(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
-      lower.pop();
-    }
-    lower.push(p);
+function topKey(counts) {
+  let best = null;
+  let bestCount = 0;
+  for (const [key, count] of counts) {
+    if (count > bestCount) { best = key; bestCount = count; }
   }
-  const upper = [];
-  for (let i = sorted.length - 1; i >= 0; i--) {
-    const p = sorted[i];
-    while (upper.length >= 2 && cross2(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
-      upper.pop();
-    }
-    upper.push(p);
-  }
-  lower.pop();
-  upper.pop();
-  return lower.concat(upper);
+  return best;
 }
 
-function ensureSectors() {
-  if (sectorSource === state.planets) return;
-  sectorSource = state.planets;
-  sectorShapes = buildSectors(state.planets);
+function hashString(text) {
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+/** Rebuilt only when the planet list changes; cheap, but pointless per frame. */
+function ensureTerritory() {
+  if (territorySource === state.planets) return;
+  territorySource = state.planets;
+  const built = buildTerritory(state.planets);
+  territoryCells = built.cells;
+  sectorLabelPoints = built.labels;
+  gridOuter = built.outer;
 }
 
 /* ------------------------------------------------------------------ sizing */
@@ -431,7 +476,7 @@ function resize() {
 function draw(now) {
   if (!width || !height) return;
   updateCamera();
-  ensureSectors();
+  ensureTerritory();
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, width, height);
@@ -447,11 +492,14 @@ function draw(now) {
 
   // Everything luminous composites additively: overlapping glow brightens the
   // way projected light does, instead of the nearest sprite simply winning.
-  drawSectors();
+  // The grid and its filled cells are the map's floor: drawn normally so the
+  // fills stay flat and readable rather than glowing into one another.
+  drawGrid();
+  drawTerritory();
 
   ctx.globalCompositeOperation = 'lighter';
   drawCoreHaze();
-  drawGrid(now);
+  drawSweep(now);
   drawSupplyLines();
   drawMotes(now);
   drawTethers();
@@ -504,47 +552,92 @@ function drawCoreHaze() {
   ctx.fill();
 }
 
-function drawGrid(now) {
+/** Trace one polar cell: outer arc, radial edge, inner arc back, close. */
+function cellPath(a0, a1, r0, r1, steps = 5) {
+  const points = [];
+  for (let i = 0; i <= steps; i++) {
+    const a = a0 + ((a1 - a0) * i) / steps;
+    points.push(project({ x: Math.cos(a) * r1, y: 0, z: Math.sin(a) * r1 }));
+  }
+  for (let i = steps; i >= 0; i--) {
+    const a = a0 + ((a1 - a0) * i) / steps;
+    points.push(project({ x: Math.cos(a) * r0, y: 0, z: Math.sin(a) * r0 }));
+  }
+  if (points.some((pt) => !pt.visible)) return null;
+
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+  ctx.closePath();
+  return points;
+}
+
+/**
+ * The empty grid: every ring and spoke, faintly, so unclaimed space still reads
+ * as charted territory rather than a void with dots in it.
+ */
+function drawGrid() {
+  const bandSize = (gridOuter - GRID_INNER) / GRID_BANDS;
   ctx.lineWidth = 1;
-  for (let r = 0.25; r <= 1.3; r += 0.25) {
-    ctx.strokeStyle = r > 1.2 ? HOLO.gridFaint : HOLO.grid;
-    ringPath(r);
+  ctx.strokeStyle = HOLO.grid;
+
+  for (let band = 0; band <= GRID_BANDS; band++) {
+    ringPath(GRID_INNER + band * bandSize);
     ctx.stroke();
   }
 
-  ctx.strokeStyle = HOLO.gridFaint;
-  for (let i = 0; i < 16; i++) {
-    const angle = (i / 16) * Math.PI * 2;
-    const a = project({ x: 0, y: 0, z: 0 });
-    const b = project({ x: Math.cos(angle) * 1.3, y: 0, z: Math.sin(angle) * 1.3 });
-    if (!a.visible || !b.visible) continue;
+  for (let wedge = 0; wedge < GRID_WEDGES; wedge++) {
+    const a = (wedge / GRID_WEDGES) * Math.PI * 2;
+    const inner = project({ x: Math.cos(a) * GRID_INNER, y: 0, z: Math.sin(a) * GRID_INNER });
+    const outer = project({ x: Math.cos(a) * gridOuter, y: 0, z: Math.sin(a) * gridOuter });
+    if (!inner.visible || !outer.visible) continue;
     ctx.beginPath();
-    ctx.moveTo(a.x, a.y);
-    ctx.lineTo(b.x, b.y);
+    ctx.moveTo(inner.x, inner.y);
+    ctx.lineTo(outer.x, outer.y);
     ctx.stroke();
-  }
-
-  // Sweep line, on the plane rather than the screen, so it belongs to the world
-  // once the view is tilted.
-  if (animating) {
-    const angle = (now / 9000) % (Math.PI * 2);
-    const a = project({ x: 0, y: 0, z: 0 });
-    const b = project({ x: Math.cos(angle) * 1.3, y: 0, z: Math.sin(angle) * 1.3 });
-    if (a.visible && b.visible) {
-      const gradient = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
-      gradient.addColorStop(0, 'rgba(120, 220, 255, 0.20)');
-      gradient.addColorStop(1, 'rgba(120, 220, 255, 0)');
-      ctx.strokeStyle = gradient;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    }
   }
 }
 
-function ringPath(radius, segments = 84) {
+/** Enemy-held cells, filled. The stepped edges are the front line. */
+function drawTerritory() {
+  for (const cell of territoryCells) {
+    const points = cellPath(cell.a0, cell.a1, cell.r0, cell.r1);
+    if (!points) continue;
+    if (points.every((pt) => offscreen(pt, 40))) continue;
+
+    const color = faction(cell.faction).color;
+    const depth = points.reduce((sum, pt) => sum + pt.depth, 0) / points.length;
+    const alpha = fog(depth);
+
+    // Two shades per faction: the darker one recedes, so adjacent sectors read
+    // as separate holdings rather than one flat mass.
+    ctx.fillStyle = withAlpha(color, (cell.shade ? 0.92 : 0.62) * alpha);
+    ctx.fill();
+    ctx.strokeStyle = withAlpha(lighten(color, 0.25), 0.9 * alpha);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+/** Sweep line, on the plane so it belongs to the world once the view tilts. */
+function drawSweep(now) {
+  if (!animating) return;
+  const angle = (now / 9000) % (Math.PI * 2);
+  const a = project({ x: 0, y: 0, z: 0 });
+  const b = project({ x: Math.cos(angle) * gridOuter, y: 0, z: Math.sin(angle) * gridOuter });
+  if (!a.visible || !b.visible) return;
+  const gradient = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+  gradient.addColorStop(0, 'rgba(120, 220, 255, 0.18)');
+  gradient.addColorStop(1, 'rgba(120, 220, 255, 0)');
+  ctx.strokeStyle = gradient;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.stroke();
+}
+
+function ringPath(radius, segments = 96) {
   ctx.beginPath();
   let started = false;
   for (let i = 0; i <= segments; i++) {
@@ -552,40 +645,6 @@ function ringPath(radius, segments = 84) {
     const p = project({ x: Math.cos(angle) * radius, y: 0, z: Math.sin(angle) * radius });
     if (!p.visible) { started = false; continue; }
     if (!started) { ctx.moveTo(p.x, p.y); started = true; } else { ctx.lineTo(p.x, p.y); }
-  }
-}
-
-/**
- * Sector hulls: soft-cornered regions enclosing the worlds of each sector, the
- * way the game groups them. Corners are rounded through the midpoints of the
- * hull edges, which turns a spiky polygon into something that reads as a region.
- */
-function drawSectors() {
-  for (const shape of sectorShapes) {
-    const projected = shape.points.map((p) => project({ x: p.x, y: 0, z: p.z }));
-    if (projected.some((p) => !p.visible)) continue;
-    if (projected.every((p) => offscreen(p, 60))) continue;
-
-    ctx.beginPath();
-    const n = projected.length;
-    const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-    let start = mid(projected[n - 1], projected[0]);
-    ctx.moveTo(start.x, start.y);
-    for (let i = 0; i < n; i++) {
-      const control = projected[i];
-      const end = mid(projected[i], projected[(i + 1) % n]);
-      ctx.quadraticCurveTo(control.x, control.y, end.x, end.y);
-    }
-    ctx.closePath();
-
-    const depth = projected.reduce((sum, p) => sum + p.depth, 0) / n;
-    ctx.globalAlpha = fog(depth);
-    ctx.fillStyle = HOLO.hullFill;
-    ctx.fill();
-    ctx.strokeStyle = HOLO.hull;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
   }
 }
 
@@ -866,25 +925,16 @@ function drawSectorLabels() {
   if ('letterSpacing' in ctx) ctx.letterSpacing = '2px';
 
   const candidates = [];
-  for (const shape of sectorShapes) {
-    if (shape.size < 3) continue;
-    const p = project({ x: shape.centroid.x, y: 0, z: shape.centroid.z });
+  for (const entry of sectorLabelPoints) {
+    const p = project({ x: entry.x, y: 0, z: entry.z });
     if (!p.visible || offscreen(p, 40)) continue;
-
-    // A sector too small on screen to hold its own name is better left unnamed.
-    const projected = shape.points.map((q) => project({ x: q.x, y: 0, z: q.z }));
-    if (projected.some((q) => !q.visible)) continue;
-    const spanX = Math.max(...projected.map((q) => q.x)) - Math.min(...projected.map((q) => q.x));
-    if (spanX < 64) continue;
-
-    candidates.push({ shape, p, spanX });
+    candidates.push({ entry, p });
   }
+  // Bigger sectors get first claim on the space.
+  candidates.sort((a, b) => b.entry.count - a.entry.count);
 
-  // Bigger regions get first claim on the space.
-  candidates.sort((a, b) => b.spanX - a.spanX);
-
-  for (const { shape, p } of candidates) {
-    const label = shape.name.toUpperCase();
+  for (const { entry, p } of candidates) {
+    const label = entry.name.toUpperCase();
     const w = ctx.measureText(label).width;
     const box = { x1: p.x - w / 2 - 3, y1: p.y - 9, x2: p.x + w / 2 + 3, y2: p.y + 4 };
     if (placed.some((o) => !(box.x2 < o.x1 || box.x1 > o.x2 || box.y2 < o.y1 || box.y1 > o.y2))) {
@@ -1064,7 +1114,7 @@ export function focusPlanet(index, { zoom } = {}) {
 
 export function resetView() {
   userMovedView = false;
-  view.azimuth = -0.55;
+  view.azimuth = 0;
   view.elevation = DEFAULT_ELEVATION;
   view.target = { x: 0, y: 0, z: 0 };
   view.distance = BASE_DISTANCE;
