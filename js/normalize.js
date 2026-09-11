@@ -314,6 +314,12 @@ function normalizeTask(raw, progressValue) {
     goal: goal > 0 ? goal : 1,
     current,
     percent: goal > 0 ? Math.min(100, (current / goal) * 100) : (current > 0 ? 100 : 0),
+    // Slot 1 carries a numeric faction id on "eliminate" objectives.
+    faction: valueTypes.includes(1) ? normalizeFaction(valueOfType(1)) : 'unknown',
+    // Slot 12 is a planet index on planet-scoped objectives and a count
+    // elsewhere; which it is cannot be decided here, so the raw value is passed
+    // through and objectives.js resolves it against the real planet list.
+    planetRef: valueOfType(12),
   };
 }
 

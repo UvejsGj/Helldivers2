@@ -319,14 +319,17 @@ function currentPlanetEvents(planets) {
 }
 
 function currentAssignment() {
-  const goalPlanets = 8;
-  const done = Math.min(goalPlanets, Math.floor(drift(4.4, 600_000) * (goalPlanets + 1)));
+  // Real orders name their worlds as separate binary objectives rather than as
+  // one "liberate N planets" counter, so the mock does the same — otherwise the
+  // per-planet rendering would never be exercised.
+  const targets = CAMPAIGN_INDEXES.liberation.slice(0, 3);
   const killGoal = 2_000_000_000;
   const kills = Math.floor(killGoal * (0.2 + drift(2.1, 500_000) * 0.75));
+  const secured = targets.map((_, i) => (drift(4.4 + i * 1.7, 600_000) > 0.45 ? 1 : 0));
 
   return [{
     id: 4212371,
-    progress: [done, kills],
+    progress: [...secured, kills, 1],
     expiresIn: Math.floor(41 * 3600 + drift(0.7, 3_600_000) * 7200),
     setting: {
       type: 4,
@@ -337,10 +340,14 @@ function currentAssignment() {
         + 'counter-offensive. Liberate the listed worlds and break the machine '
         + 'line before it reaches the inner colonies.',
       taskDescription:
-        'Liberate 8 planets in the Xzar and Ymir sectors and eliminate 2 billion Automatons.',
+        'Liberate the listed worlds, eliminate 2 billion Automatons, and hold the line.',
       tasks: [
-        { type: 11, values: [1, goalPlanets, 0], valueTypes: [1, 3, 12] },
-        { type: 3, values: [1, killGoal, 0], valueTypes: [1, 3, 12] },
+        // Planet-scoped objectives: goal of one, the planet index in slot 12.
+        ...targets.map((index) => ({
+          type: 11, values: [1, 1, index], valueTypes: [1, 3, 12],
+        })),
+        { type: 3, values: [4, killGoal, 0], valueTypes: [1, 3, 12] },
+        { type: 13, values: [1, 1, CAMPAIGN_INDEXES.defence[0]], valueTypes: [1, 3, 12] },
       ],
       reward: { type: 1, amount: 55, id32: 897894093 },
       rewards: [{ type: 1, amount: 55, id32: 897894093 }],

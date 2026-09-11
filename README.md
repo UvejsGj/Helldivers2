@@ -99,6 +99,7 @@ js/
   normalize.js    defensive parsing + derived attacks and supply lines
   trend.js        liberation rate over time, and what it projects
   priority.js     which front needs bodies (pure, testable)
+  objectives.js   Major Order tasks, described (pure, testable)
   report.js       the war as plain text, for pasting elsewhere
   events.js       what changed between two polls (pure, testable)
   audio.js        synthesised cues; no asset files
@@ -110,7 +111,7 @@ js/
     alerts.js  boot.js  search.js  bulletins.js
 test/
   normalize.test.mjs  format.test.mjs  trend.test.mjs  events.test.mjs
-  priority.test.mjs   report.test.mjs
+  priority.test.mjs   report.test.mjs   objectives.test.mjs
 sw.js               service worker: caches the app shell for offline
 manifest.webmanifest
 ```
@@ -142,6 +143,21 @@ browsers block audio until a gesture anyway, and a dashboard left on a second
 monitor must not start making noise on its own.
 
 **War day.** `WAR DAY 1,324` in the masthead, from the war's real start date.
+
+**Major Order detail.** An objective is a type plus two parallel arrays, and
+rendering that as "OBJECTIVE 01" throws away everything the payload said.
+`objectives.js` turns it into what it is — `LIBERATE MERIDIA`,
+`ELIMINATE 2B AUTOMATONS`, `HOLD SEASSE` — with the faction of whoever holds the
+world, the rate still needed per hour to land before expiry, and a jump to the
+planet on the map. Named worlds link; aggregate progress sits under the set.
+
+The slot meanings are community knowledge rather than a published contract, so
+every reading is guarded. Slot 12 is a planet index on planet-scoped objectives
+and a count elsewhere, and nothing in the payload says which: a world is only
+named when the objective targets one *and* its goal is a single unit, because
+"liberate 8 planets" carries a goal of 8 and a zero in that slot — and planet
+zero exists. An objective type nobody has mapped keeps its numbered label rather
+than getting an invented verb.
 
 **Priority ordering.** Active Fronts is ranked by what needs bodies, not by who
 has the most already — the busiest planet is usually the one that needs them
