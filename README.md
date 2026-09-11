@@ -236,6 +236,7 @@ mass.
 | Zoom | Scroll, pinch, `+` / `-`, or double-click |
 | Look straight down | `TOP` button, or `T` |
 | Reset / refit | `RESET` button, or `0` |
+| Search planets | `/`, then arrows and Enter — matches name or sector |
 | Inspect a planet | Click it, or pick one from Active Fronts |
 | Close the detail panel | `Esc` |
 | Force a refresh | `R` |

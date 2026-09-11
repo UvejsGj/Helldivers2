@@ -96,6 +96,15 @@
       <div class="map">
         <canvas id="galaxy" tabindex="0"
                 aria-label="Three-dimensional galactic map of the Helldivers 2 war. Arrow keys orbit the view, alt with arrow keys pans, plus and minus zoom, T looks straight down, 0 resets. Planets are also listed under Active Fronts."></canvas>
+        <div class="search" id="planet-search">
+          <input type="search" id="search-input" class="search__input"
+                 placeholder="SEARCH WORLDS  /" autocomplete="off" spellcheck="false"
+                 role="combobox" aria-expanded="false" aria-controls="search-results"
+                 aria-autocomplete="list" aria-label="Search planets by name or sector">
+          <ul class="search__results" id="search-results" role="listbox"
+              aria-label="Search results" hidden></ul>
+        </div>
+
         <div class="tip" id="map-tooltip" hidden></div>
         <div class="map__legend">
           <span><i style="background:#3d8bff"></i>Super Earth</span>

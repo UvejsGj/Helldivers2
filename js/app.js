@@ -17,6 +17,7 @@ import { initDispatches } from './ui/dispatches.js';
 import { initStatus } from './ui/status.js';
 import { initAlerts } from './ui/alerts.js';
 import { initBoot } from './ui/boot.js';
+import { initSearch } from './ui/search.js';
 import { chirp, isEnabled, loadPreference, setEnabled } from './audio.js';
 
 let pollTimer = null;
@@ -185,6 +186,7 @@ function boot() {
   initStats();
   initDispatches();
   initAlerts();
+  initSearch();
   bindWarDay();
   bindAudio();
   bindLayout();

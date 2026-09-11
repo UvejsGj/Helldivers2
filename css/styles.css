@@ -1318,3 +1318,98 @@ a:hover { color: #ffd84a; }
 @media (prefers-reduced-motion: reduce) {
   .alert { animation: none; }
 }
+
+/* ==========================================================================
+   PLANET SEARCH
+   ========================================================================== */
+
+.search {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 6;
+  width: min(268px, calc(100% - 20px));
+}
+
+.search__input {
+  width: 100%;
+  appearance: none;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius);
+  background: rgba(5, 9, 15, 0.88);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  padding: 7px 10px;
+  backdrop-filter: blur(3px);
+}
+
+.search__input::placeholder { color: var(--ink-faint); letter-spacing: 0.16em; }
+.search__input:focus {
+  outline: none;
+  border-color: var(--gold-dim);
+  background: rgba(7, 13, 20, 0.96);
+}
+/* Chrome draws its own clear button; it fights the terminal look. */
+.search__input::-webkit-search-cancel-button { display: none; }
+
+.search__results {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 4px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius);
+  background: rgba(6, 11, 18, 0.97);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  max-height: 296px;
+  overflow-y: auto;
+}
+
+.search__item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "dot name status" "dot sector status";
+  gap: 0 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.search__item.is-active,
+.search__item:hover { background: rgba(61, 139, 255, 0.16); }
+
+.search__dot {
+  grid-area: dot;
+  width: 8px; height: 8px; border-radius: 50%;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.search__name {
+  grid-area: name;
+  font-size: 13px; letter-spacing: 0.04em; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+.search__sector {
+  grid-area: sector;
+  font-size: 9px; letter-spacing: 0.16em; color: var(--ink-faint);
+  text-transform: uppercase;
+}
+
+.search__status {
+  grid-area: status;
+  font-size: 10px; color: var(--ink-faint); text-align: right;
+}
+.search__status.is-contested { color: var(--gold); }
+
+/* The legend shares the map's lower-left; the results list can grow past it. */
+.search.is-open ~ .map__legend { opacity: 0.35; }
+
+@media (max-width: 560px) {
+  .search { width: calc(100% - 20px); }
+  .search__results { max-height: 232px; }
+}
