@@ -6,6 +6,11 @@
 <title>Super Earth Watch — Galactic War Command</title>
 <meta name="description" content="A live Helldivers 2 galactic war dashboard: Major Orders, the galactic map, war statistics and dispatches from Super Earth High Command.">
 <meta name="theme-color" content="#05070b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Super Earth Watch">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%2305070b'/><path d='M16 4l3.6 7.6 8.4 1.1-6.1 5.8 1.5 8.3L16 22.9 8.6 26.8l1.5-8.3L4 12.7l8.4-1.1z' fill='%23f5c518'/></svg>">
 <link rel="stylesheet" href="css/styles.css">
 
@@ -127,6 +132,8 @@
                 role="tab" aria-selected="true">WAR STATS</button>
         <button type="button" class="tabs__btn" data-tab="dispatches"
                 role="tab" aria-selected="false">DISPATCHES</button>
+        <button type="button" class="tabs__btn" data-tab="bulletins"
+                role="tab" aria-selected="false">BULLETINS</button>
       </div>
 
       <div class="panel__scroll" data-pane="stats" role="tabpanel">
@@ -135,6 +142,10 @@
 
       <div class="panel__scroll" data-pane="dispatches" role="tabpanel" hidden>
         <ol id="dispatch-feed" class="dispatches"></ol>
+      </div>
+
+      <div class="panel__scroll" data-pane="bulletins" role="tabpanel" hidden>
+        <ol id="bulletin-feed" class="bulletins"></ol>
       </div>
     </section>
 

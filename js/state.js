@@ -10,7 +10,7 @@ import { recordSamples, setScope } from './trend.js';
 import { diffSnapshots, snapshotOf } from './events.js';
 import {
   normalizeWar, normalizePlanet, normalizeCampaign, normalizeEvent,
-  normalizeAssignment, normalizeDispatch, asArray,
+  normalizeAssignment, normalizeDispatch, normalizeSteamPost, asArray,
   linkCampaigns, linkEvents, deriveAttacks, deriveSupplyLines,
 } from './normalize.js';
 
@@ -25,6 +25,7 @@ export const state = {
   supplyLines: [],
   assignments: [],
   dispatches: [],
+  bulletins: [],
   /** Per-endpoint health, for the diagnostics readout. */
   sources: {},
   lastUpdated: null,
@@ -36,6 +37,8 @@ export const state = {
   selectedPlanet: null,
   /** Events detected on the most recent refresh; consumed by the alert stack. */
   events: [],
+  /** Sector name to narrow the view to, or null for the whole galaxy. */
+  sectorFilter: null,
   refreshing: false,
 };
 
@@ -61,6 +64,14 @@ export function notify(reason = 'update') {
 export function resetEventBaseline() {
   lastSnapshot = null;
   state.events = [];
+}
+
+/** Narrow the fronts list and the map to one sector. Null clears it. */
+export function setSectorFilter(sector) {
+  const next = sector || null;
+  if (next === state.sectorFilter) return;
+  state.sectorFilter = next;
+  notify('filter');
 }
 
 export function selectPlanet(index) {
@@ -229,6 +240,17 @@ function applySlice(key) {
       const raw = api.peek('assignments')?.data;
       if (raw) {
         state.assignments = asArray(raw).map(normalizeAssignment).filter(Boolean);
+      }
+      break;
+    }
+
+    case 'steam': {
+      const raw = api.peek('steam')?.data;
+      if (raw) {
+        state.bulletins = asArray(raw)
+          .map(normalizeSteamPost)
+          .filter(Boolean)
+          .sort((a, b) => (b.published || 0) - (a.published || 0));
       }
       break;
     }

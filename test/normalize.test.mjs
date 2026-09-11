@@ -277,3 +277,37 @@ test('linkCampaigns and linkEvents attach to the right planets', () => {
   assert.equal(byIndex.get(2).event.faction, 'terminids');
   assert.equal(byIndex.get(2).liberation, 75, 'defence progress overrides the health reading');
 });
+
+/* ------------------------------------------------------------------ steam */
+
+test('normalizeSteamPost reduces Steam markup to plain text', async () => {
+  const { normalizeSteamPost } = await import('../js/normalize.js');
+  const post = normalizeSteamPost({
+    id: 'x', title: 'PATCH 01.003.204', publishedAt: '2026-09-01T10:00:00Z',
+    url: 'https://store.steampowered.com/news/',
+    content: '[h1]Balance[/h1]\n[list]\n[*] Less recoil.\n[*] Fewer crashes.\n[/list]\n'
+      + 'Democracy is [b]iterative[/b]. [url=https://x.invalid]notes[/url]',
+  });
+  assert.equal(post.title, 'PATCH 01.003.204');
+  assert.ok(!post.content.includes('['), 'no markup survives');
+  assert.match(post.content, /• Less recoil\./);
+  assert.match(post.content, /Democracy is iterative\./);
+  assert.match(post.content, /notes/, 'link text is kept even though the tag is dropped');
+});
+
+test('normalizeSteamPost only keeps http(s) links', async () => {
+  const { normalizeSteamPost } = await import('../js/normalize.js');
+  // An href is the one place a feed could smuggle a script URL into the page.
+  assert.equal(normalizeSteamPost({ title: 'a', url: 'javascript:alert(1)' }).url, null);
+  assert.equal(normalizeSteamPost({ title: 'a', url: 'data:text/html,x' }).url, null);
+  assert.equal(normalizeSteamPost({ title: 'a', url: 'https://ok.example' }).url, 'https://ok.example');
+});
+
+test('normalizeSteamPost rejects an empty post but survives a partial one', async () => {
+  const { normalizeSteamPost } = await import('../js/normalize.js');
+  assert.equal(normalizeSteamPost({}), null);
+  assert.equal(normalizeSteamPost(null), null);
+  const bare = normalizeSteamPost({ content: 'Just a body.' });
+  assert.equal(bare.title, 'Untitled');
+  assert.equal(bare.published, null);
+});

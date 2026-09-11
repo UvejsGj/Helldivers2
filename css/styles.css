@@ -1413,3 +1413,160 @@ a:hover { color: #ffd84a; }
   .search { width: calc(100% - 20px); }
   .search__results { max-height: 232px; }
 }
+
+/* Sparkline behind the rate of advance. preserveAspectRatio is none, so the
+   stroke would scale with the box — vector-effect keeps it one pixel. */
+.spark {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 34px;
+  margin-top: 6px;
+  overflow: visible;
+}
+
+.spark__line {
+  fill: none;
+  stroke: var(--accent-trend, var(--ink-dim));
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+}
+
+.spark__area { fill: var(--accent-trend, var(--ink-dim)); opacity: 0.12; }
+.spark__head { fill: var(--accent-trend, var(--ink-dim)); }
+
+/* Priority tier badge on each front row. */
+.front__top { align-items: baseline; gap: 6px; }
+.front__name { flex: 1; }
+
+.front__tier {
+  flex: none;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  padding: 2px 5px;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+  cursor: help;
+}
+
+.front__tier--critical { color: var(--bad); background: rgba(255, 77, 77, 0.12); }
+.front__tier--urgent { color: var(--warn); background: rgba(255, 176, 32, 0.1); }
+.front__tier--push { color: var(--ok); background: rgba(61, 220, 132, 0.1); }
+.front__tier--steady { color: var(--ink-faint); border-color: var(--line-bright); }
+.front__tier--holding { color: var(--humans); background: rgba(61, 139, 255, 0.1); }
+
+/* Sector filter: the way in is the sector name, the way out is the chip. */
+.pp__sector-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+  border-bottom: 1px dotted var(--line-bright);
+}
+.pp__sector-btn:hover { color: var(--gold); border-bottom-color: var(--gold-dim); }
+
+.filter-chip {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  appearance: none;
+  border: 1px solid var(--gold-dim);
+  background: rgba(245, 197, 24, 0.1);
+  color: var(--gold);
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  padding: 4px 9px;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.filter-chip:hover { background: rgba(245, 197, 24, 0.18); }
+
+/* ==========================================================================
+   BULLETINS
+   ========================================================================== */
+
+.bulletins { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+
+.bulletin {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-bright);
+  background: var(--panel-2);
+  border-radius: var(--radius);
+}
+.bulletin:first-child { border-left-color: var(--gold); }
+
+.bulletin__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 11px;
+  cursor: pointer;
+  list-style: none;
+}
+.bulletin__head::-webkit-details-marker { display: none; }
+.bulletin__head:hover .bulletin__title { color: #fff; }
+
+.bulletin__title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  min-width: 0;
+}
+
+.bulletin__time { font-size: 10px; color: var(--ink-faint); flex: none; }
+
+.bulletin__body { padding: 0 11px 4px; }
+.bulletin__line { margin: 0 0 8px; font-size: 12px; line-height: 1.55; color: var(--ink-dim); }
+.bulletin__list { margin: 0 0 8px; padding-left: 16px; font-size: 12px; line-height: 1.55; color: var(--ink-dim); }
+.bulletin__list li { margin-bottom: 3px; }
+
+.bulletin__link {
+  display: inline-block;
+  margin: 0 11px 10px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+}
+
+/* Copy-report button, sitting on the Active Fronts heading. */
+.pp__name { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.pp__count { margin-right: auto; }
+
+.pp__copy {
+  appearance: none;
+  border: 1px solid var(--line-bright);
+  background: transparent;
+  color: var(--ink-faint);
+  font-family: var(--font-display);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  padding: 4px 8px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+.pp__copy:hover { color: var(--ink); border-color: var(--gold-dim); }
+.pp__copy.is-failed { color: var(--warn); border-color: var(--warn); }
+
+/* A third tab overflowed the row at 320px and pushed the page sideways. The
+   strip scrolls on its own rather than the body — every tab stays reachable. */
+.tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tabs__btn { flex: 0 0 auto; white-space: nowrap; }
+
+@media (max-width: 620px) {
+  .tabs__btn { padding: 11px 10px; letter-spacing: 0.12em; }
+}

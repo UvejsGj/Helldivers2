@@ -383,6 +383,37 @@ function currentDispatches() {
   }));
 }
 
+/** Patch notes, in Steam's own markup so the normaliser is exercised. */
+function currentBulletins() {
+  const now = Date.now();
+  const posts = [
+    {
+      title: 'PATCH 01.003.204',
+      body: '[h1]Balance[/h1]\n[list]\n[*] Reduced recoil on the AR-23 Liberator.\n'
+        + '[*] Bile Titans no longer ignore orbital strikes.\n[*] Fixed a crash on extraction.\n[/list]\n\n'
+        + 'Democracy is [b]iterative[/b]. See the [url=https://example.invalid]full notes[/url].',
+    },
+    {
+      title: 'MINOR UPDATE 01.003.199',
+      body: 'Stability fixes for the Xzar sector deployment queue.\n'
+        + 'Matchmaking should now find squads faster during peak hours.',
+    },
+    {
+      title: 'PATCH 01.003.187',
+      body: '[h1]New Stratagem[/h1]\nThe Orbital Napalm Barrage is now available at Level 20.\n\n'
+        + '[h1]Fixes[/h1]\n[list]\n[*] Corrected friendly-fire attribution in the after-action report.\n[/list]',
+    },
+  ];
+  return posts.map((post, i) => ({
+    id: `steam-${i}`,
+    title: post.title,
+    url: 'https://store.steampowered.com/news/',
+    author: 'Super Earth High Command',
+    content: post.body,
+    publishedAt: new Date(now - (i + 1) * 3.2 * 86400_000).toISOString(),
+  }));
+}
+
 function currentWar() {
   return {
     started: new Date(MOCK_WAR_START).toISOString(),
@@ -408,6 +439,7 @@ export function mockPayload(key) {
     case 'planetEvents': return currentPlanetEvents(planets);
     case 'assignments': return currentAssignment();
     case 'dispatches': return currentDispatches();
+    case 'steam': return currentBulletins();
     default: throw new Error(`No mock data for "${key}"`);
   }
 }

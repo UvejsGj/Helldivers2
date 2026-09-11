@@ -213,6 +213,15 @@ export function formatRate(projection) {
   return `${sign}${projection.perHour.toFixed(2)}%/h`;
 }
 
+/**
+ * The stored history for one planet, oldest first, as [epochMs, percent] pairs.
+ * A copy, so a caller cannot mutate the series out from under the maths.
+ */
+export function seriesFor(index) {
+  const points = series.get(index);
+  return points ? points.map((p) => [p[0], p[1]]) : [];
+}
+
 /** Only used by the tests and by a hard reset. */
 export function clearTrends() {
   series = new Map();

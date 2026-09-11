@@ -14,6 +14,7 @@ import { focusPlanet, initMap } from './ui/map.js';
 import { initPlanetPanel } from './ui/planetPanel.js';
 import { initStats } from './ui/stats.js';
 import { initDispatches } from './ui/dispatches.js';
+import { initBulletins } from './ui/bulletins.js';
 import { initStatus } from './ui/status.js';
 import { initAlerts } from './ui/alerts.js';
 import { initBoot } from './ui/boot.js';
@@ -185,6 +186,7 @@ function boot() {
   initPlanetPanel();
   initStats();
   initDispatches();
+  initBulletins();
   initAlerts();
   initSearch();
   bindWarDay();
@@ -210,6 +212,31 @@ if (document.readyState === 'loading') {
 } else {
   boot();
 }
+
+/**
+ * Register the service worker, which caches the app shell so the dashboard
+ * opens offline against its stored snapshot.
+ *
+ * Failure is silent and harmless: the worker is absent in the single-file
+ * preview build and blocked outright on insecure origins, and the app works
+ * exactly as before without it.
+ */
+function registerWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  const secure = location.protocol === 'https:' || location.hostname === 'localhost'
+    || location.hostname === '127.0.0.1';
+  if (!secure) return;
+  // Registered immediately rather than on `load`. The conventional reason to
+  // wait is to keep the worker's install off the critical path, but `load`
+  // waits on every subresource — a slow webfont CDN delayed registration by
+  // the better part of ten seconds, which is exactly the connection where
+  // offline support matters.
+  navigator.serviceWorker.register('sw.js').catch(() => {
+    // No worker: the dashboard still runs, it just will not open offline.
+  });
+}
+
+registerWorker();
 
 // Handy for poking at the war from the console.
 window.superEarthWatch = { state, refresh };

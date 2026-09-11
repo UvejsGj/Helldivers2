@@ -24,7 +24,7 @@
  */
 
 import { faction } from '../config.js';
-import { selectPlanet, state, subscribe } from '../state.js';
+import { selectPlanet, setSectorFilter, state, subscribe } from '../state.js';
 import { compact, percent } from '../format.js';
 
 const canvas = document.getElementById('galaxy');
@@ -822,6 +822,14 @@ function drawSuperEarth(now) {
 /** Screen position for Super Earth's caption, set each frame while drawing. */
 let superEarthLabel = null;
 
+/** Sector caption boxes from the last frame, so they can be clicked. */
+let sectorHitBoxes = [];
+
+/** True when a planet is outside the active sector filter. */
+function filteredOut(planet) {
+  return Boolean(state.sectorFilter) && planet.sector !== state.sectorFilter;
+}
+
 /**
  * Planets, painted back to front.
  *
@@ -848,7 +856,9 @@ function drawPlanets(now) {
     const active = Boolean(planet.campaign || planet.event);
     const isSelected = selected === planet.index;
     const isHovered = hovered === planet.index;
-    const alpha = fog(p.depth);
+    // A filtered-out world stays on the map, faintly: removing it would break
+    // the reader's sense of where the sector sits in the galaxy.
+    const alpha = fog(p.depth) * (filteredOut(planet) ? 0.16 : 1);
 
     ctx.globalAlpha = alpha;
 
@@ -916,6 +926,7 @@ function drawPlanets(now) {
  */
 function drawSectorLabels() {
   const placed = [];
+  sectorHitBoxes = [];
   const zoom = BASE_DISTANCE / view.distance;
   if (zoom < 0.75) return placed;
 
@@ -941,11 +952,13 @@ function drawSectorLabels() {
       continue;
     }
     placed.push(box);
+    sectorHitBoxes.push({ ...box, sector: entry.name });
 
-    ctx.globalAlpha = fog(p.depth);
+    const selected = state.sectorFilter === entry.name;
+    ctx.globalAlpha = fog(p.depth) * (state.sectorFilter && !selected ? 0.4 : 1);
     ctx.fillStyle = 'rgba(2, 7, 12, 0.85)';
     ctx.fillText(label, p.x + 1, p.y + 1);
-    ctx.fillStyle = HOLO.label;
+    ctx.fillStyle = selected ? '#ffd75e' : HOLO.label;
     ctx.fillText(label, p.x, p.y);
   }
 
@@ -1060,6 +1073,14 @@ function planetAt(sx, sy) {
     }
   }
   return best;
+}
+
+/** A sector caption under the pointer, from the boxes the last frame placed. */
+function sectorAt(sx, sy) {
+  for (const box of sectorHitBoxes) {
+    if (sx >= box.x1 && sx <= box.x2 && sy >= box.y1 && sy <= box.y2) return box.sector;
+  }
+  return null;
 }
 
 /* -------------------------------------------------------------- navigation */
@@ -1239,7 +1260,8 @@ function bindPointer() {
       needsDraw = true;
     }
     updateTooltip(planet, event.clientX - rect.left, event.clientY - rect.top);
-    canvas.style.cursor = planet ? 'pointer' : 'grab';
+    const overSector = !planet && sectorAt(event.clientX - rect.left, event.clientY - rect.top);
+    canvas.style.cursor = planet || overSector ? 'pointer' : 'grab';
   });
 
   const endPointer = (event) => {
@@ -1253,8 +1275,20 @@ function bindPointer() {
       canvas.classList.remove('is-panning');
       // A drag that barely moved is a click, not a rotation.
       if (wasDragging && moved < 6) {
-        const planet = planetAt(event.clientX - rect.left, event.clientY - rect.top);
-        selectPlanet(planet ? planet.index : null);
+        const sx = event.clientX - rect.left;
+        const sy = event.clientY - rect.top;
+        const planet = planetAt(sx, sy);
+        if (planet) {
+          selectPlanet(planet.index);
+          return;
+        }
+        // No planet under the pointer: a sector caption is the next best target.
+        const sector = sectorAt(sx, sy);
+        if (sector) {
+          setSectorFilter(state.sectorFilter === sector ? null : sector);
+          return;
+        }
+        selectPlanet(null);
       }
     }
   };

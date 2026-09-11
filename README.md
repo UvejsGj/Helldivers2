@@ -81,6 +81,7 @@ Rate limiting is handled in `js/api.js`:
 | `/api/v1/planet-events` | Defence events, used for front-line arrows |
 | `/api/v1/assignments` | Major Order: tasks, progress, reward, expiry |
 | `/api/v1/dispatches` | News feed |
+| `/api/v1/steam` | Patch notes, shown as High Command bulletins |
 
 There is no separate `/war/summary` endpoint in v1 — the global totals the War
 Stats panel needs are on `/api/v1/war` under `statistics`, which is what the app
@@ -97,6 +98,8 @@ js/
   mock.js         generated offline galaxy, in the API's own shapes
   normalize.js    defensive parsing + derived attacks and supply lines
   trend.js        liberation rate over time, and what it projects
+  priority.js     which front needs bodies (pure, testable)
+  report.js       the war as plain text, for pasting elsewhere
   events.js       what changed between two polls (pure, testable)
   audio.js        synthesised cues; no asset files
   state.js        one snapshot of the war + subscribe/notify bus
@@ -104,9 +107,12 @@ js/
   app.js          bootstrap, auto-refresh loop, deep links
   ui/
     majorOrder.js  status.js  map.js  planetPanel.js  stats.js  dispatches.js
-    alerts.js  boot.js
+    alerts.js  boot.js  search.js  bulletins.js
 test/
   normalize.test.mjs  format.test.mjs  trend.test.mjs  events.test.mjs
+  priority.test.mjs   report.test.mjs
+sw.js               service worker: caches the app shell for offline
+manifest.webmanifest
 ```
 
 The data flows one way: `api` → `normalize` → `state` → views. Views subscribe to
@@ -136,6 +142,28 @@ browsers block audio until a gesture anyway, and a dashboard left on a second
 monitor must not start making noise on its own.
 
 **War day.** `WAR DAY 1,324` in the masthead, from the war's real start date.
+
+**Priority ordering.** Active Fronts is ranked by what needs bodies, not by who
+has the most already — the busiest planet is usually the one that needs them
+least. A defence projected to miss its deadline is CRITICAL; ground being lost
+is URGENT; a liberation within about twelve hours is a PUSH. Without a measured
+rate the verdict stays deliberately neutral rather than guessing from a single
+snapshot.
+
+**Sparkline.** The rate of advance is drawn from the same stored history that
+produces the number. A shape separates a stall from a steady climb from a push
+that just ended, which one figure cannot. The y-axis spans the observed range,
+not a fixed 0–100, or an hour of real movement would read as a flat line.
+
+**Copyable report.** One button puts a plain-text war summary on the clipboard,
+laid out for a monospace channel. Falls back to a selection-based copy where the
+async clipboard API is unavailable, and says so when neither works.
+
+**Installable.** A manifest and a service worker cache the app shell, so on a
+phone it installs to the home screen and opens with no connection at all — the
+stored snapshot then fills it with the last known positions. The API is never
+cached: silently serving stale war data as if it were live is exactly the thing
+the staleness reporting exists to prevent.
 
 ### Notes on a few decisions
 
@@ -237,6 +265,7 @@ mass.
 | Look straight down | `TOP` button, or `T` |
 | Reset / refit | `RESET` button, or `0` |
 | Search planets | `/`, then arrows and Enter — matches name or sector |
+| Filter to a sector | Click its name on the map, or in a planet's header |
 | Inspect a planet | Click it, or pick one from Active Fronts |
 | Close the detail panel | `Esc` |
 | Force a refresh | `R` |

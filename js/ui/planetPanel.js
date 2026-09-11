@@ -8,10 +8,12 @@
  */
 
 import { FACTIONS, faction } from '../config.js';
-import { selectPlanet, state, subscribe } from '../state.js';
+import { selectPlanet, setSectorFilter, state, subscribe } from '../state.js';
 import { compact, countdown, escapeHtml, full, percent, relativeTime } from '../format.js';
 import { focusPlanet } from './map.js';
-import { formatRate, projectionFor } from '../trend.js';
+import { formatRate, projectionFor, seriesFor } from '../trend.js';
+import { byPriority, priorityOf } from '../priority.js';
+import { buildReport, copyText } from '../report.js';
 
 const root = document.getElementById('planet-panel');
 let tickTimer = null;
@@ -25,6 +27,27 @@ function render() {
   root.classList.toggle('is-detail', Boolean(planet));
 
   root.querySelector('[data-close]')?.addEventListener('click', () => selectPlanet(null));
+  root.querySelector('[data-clear-filter]')?.addEventListener('click', () => setSectorFilter(null));
+
+  root.querySelector('[data-copy-report]')?.addEventListener('click', async (event) => {
+    const button = event.currentTarget;
+    const fronts = state.campaignPlanets
+      .filter((planet) => !state.sectorFilter || planet.sector === state.sectorFilter)
+      .map((planet) => ({ planet, priority: priorityOf(planet, projectionFor(planet)) }))
+      .sort(byPriority);
+    const rate = (planet) => formatRate(projectionFor(planet));
+    const ok = await copyText(buildReport(state, fronts, rate));
+    button.textContent = ok ? 'COPIED' : 'COPY BLOCKED';
+    button.classList.toggle('is-failed', !ok);
+    setTimeout(() => {
+      button.textContent = 'COPY REPORT';
+      button.classList.remove('is-failed');
+    }, 2000);
+  });
+  root.querySelector('[data-sector]')?.addEventListener('click', (event) => {
+    const sector = event.currentTarget.dataset.sector;
+    setSectorFilter(state.sectorFilter === sector ? null : sector);
+  });
 
   for (const node of root.querySelectorAll('[data-planet]')) {
     node.addEventListener('click', () => {
@@ -60,7 +83,11 @@ function planetHtml(planet) {
     <div class="pp">
       <header class="pp__head" style="--accent:${owner.color}">
         <div>
-          <p class="pp__sector">${escapeHtml(planet.sector)} Sector · #${planet.index}</p>
+          <p class="pp__sector">
+            <button type="button" class="pp__sector-btn" data-sector="${escapeHtml(planet.sector)}"
+                    title="Show only ${escapeHtml(planet.sector)} sector">${escapeHtml(planet.sector)} Sector</button>
+            · #${planet.index}
+          </p>
           <h2 class="pp__name">${escapeHtml(planet.name)}</h2>
         </div>
         <button class="pp__close" type="button" data-close aria-label="Close planet details">✕</button>
@@ -164,9 +191,58 @@ function trendHtml(planet) {
     <div class="trend trend--${tone}">
       <span class="trend__label">RATE OF ADVANCE</span>
       <span class="trend__value mono">${escapeHtml(rate)}</span>
+      ${sparkline(planet, tone)}
       <p class="trend__note">${escapeHtml(verdict)}</p>
       <p class="trend__basis mono">observed over ${formatHours(projection.spanHours)} · ${projection.samples} samples</p>
     </div>`;
+}
+
+/**
+ * The history behind the rate, drawn as a sparkline.
+ *
+ * A single number cannot tell a stall from a steady climb from a push that
+ * just ended, and the series is already being stored to compute the rate — so
+ * the shape costs nothing beyond drawing it.
+ *
+ * The y-axis spans the observed range rather than a fixed 0-100: over an hour a
+ * front may move two points, and against a full scale that is a flat line.
+ */
+function sparkline(planet, tone) {
+  const points = seriesFor(planet.index);
+  if (points.length < 3) return '';
+
+  const W = 220;
+  const H = 34;
+  const PAD = 3;
+
+  const times = points.map((p) => p[0]);
+  const values = points.map((p) => p[1]);
+  const t0 = times[0];
+  const tSpan = Math.max(1, times[times.length - 1] - t0);
+
+  let lo = Math.min(...values);
+  let hi = Math.max(...values);
+  // Guarantee a visible band so a genuinely flat series reads as flat rather
+  // than dividing by zero.
+  if (hi - lo < 1) { const mid = (hi + lo) / 2; lo = mid - 0.5; hi = mid + 0.5; }
+  const vSpan = hi - lo;
+
+  const coords = points.map(([t, v]) => [
+    PAD + ((t - t0) / tSpan) * (W - PAD * 2),
+    PAD + (1 - (v - lo) / vSpan) * (H - PAD * 2),
+  ]);
+
+  const line = coords.map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ');
+  const area = `${line} L${coords[coords.length - 1][0].toFixed(1)} ${H} L${coords[0][0].toFixed(1)} ${H} Z`;
+  const [lastX, lastY] = coords[coords.length - 1];
+
+  return `
+    <svg class="spark spark--${tone}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"
+         role="img" aria-label="Liberation from ${lo.toFixed(1)}% to ${hi.toFixed(1)}% over the observed window">
+      <path class="spark__area" d="${area}"/>
+      <path class="spark__line" d="${line}"/>
+      <circle class="spark__head" cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="2.4"/>
+    </svg>`;
 }
 
 /** Compact duration for projections: "3h 20m", "45m", "2d 4h". */
@@ -226,26 +302,49 @@ function stat(label, value) {
   return `<div class="pp__stat"><dt>${escapeHtml(label)}</dt><dd class="mono">${value}</dd></div>`;
 }
 
-/** The default view: every planet with a live campaign, busiest first. */
+/**
+ * The default view: every live campaign, ordered by which needs bodies most.
+ *
+ * Busiest-first was easy to compute and answered nothing — the planet with the
+ * most divers is usually the one that needs them least. Priority ordering puts
+ * the defence that is about to fall at the top, where it belongs.
+ */
 function campaignListHtml() {
-  const campaigns = state.campaignPlanets;
+  const campaigns = state.campaignPlanets
+    .filter((planet) => !state.sectorFilter || planet.sector === state.sectorFilter)
+    .map((planet) => ({ planet, priority: priorityOf(planet, projectionFor(planet)) }))
+    .sort(byPriority);
 
   if (!campaigns.length) {
     return `
       <div class="pp pp--empty">
         <h2 class="pp__name">ACTIVE FRONTS</h2>
-        <p class="pp__hint">${state.status === 'down'
-          ? 'No campaign data. Awaiting contact with High Command.'
-          : 'No active campaigns reported. Select a planet on the map for details.'}</p>
+        <p class="pp__hint">${state.sectorFilter
+          ? `No active campaigns in ${escapeHtml(state.sectorFilter)} sector.`
+          : state.status === 'down'
+            ? 'No campaign data. Awaiting contact with High Command.'
+            : 'No active campaigns reported. Select a planet on the map for details.'}</p>
+        ${state.sectorFilter ? `
+          <button type="button" class="filter-chip" data-clear-filter>
+            ${escapeHtml(state.sectorFilter.toUpperCase())} SECTOR <span aria-hidden="true">✕</span>
+          </button>` : ''}
       </div>`;
   }
 
   return `
     <div class="pp pp--list">
-      <h2 class="pp__name">ACTIVE FRONTS <span class="pp__count">${campaigns.length}</span></h2>
-      <p class="pp__hint">Select a world for full telemetry.</p>
+      <h2 class="pp__name">ACTIVE FRONTS <span class="pp__count">${campaigns.length}</span>
+        <button type="button" class="pp__copy" data-copy-report
+                title="Copy a plain-text war report">COPY REPORT</button>
+      </h2>
+      ${state.sectorFilter ? `
+        <button type="button" class="filter-chip" data-clear-filter>
+          ${escapeHtml(state.sectorFilter.toUpperCase())} SECTOR
+          <span aria-hidden="true">✕</span>
+          <span class="sr-only">Clear sector filter</span>
+        </button>` : '<p class="pp__hint">Select a world for full telemetry.</p>'}
       <ul class="front-list">
-        ${campaigns.map((planet) => {
+        ${campaigns.map(({ planet, priority }) => {
           const defending = Boolean(planet.event);
           // On a defence the interesting party is whoever is attacking us, not
           // the flag currently flying over the planet.
@@ -257,6 +356,8 @@ function campaignListHtml() {
                 <span class="front__body">
                   <span class="front__top">
                     <span class="front__name">${escapeHtml(planet.name)}</span>
+                    <span class="front__tier front__tier--${priority.tier}"
+                          title="${escapeHtml(priority.reason)}">${priority.label}</span>
                     <span class="front__players mono">${compact(planet.players)}</span>
                   </span>
                   <span class="front__meta">

@@ -342,6 +342,59 @@ export function normalizeDispatch(raw) {
   };
 }
 
+/* ------------------------------------------------------------------ steam */
+
+/**
+ * A Steam patch-note post. `content` arrives as Steam's own markup, which is
+ * neither HTML nor Markdown, so it is reduced to plain text here and formatted
+ * at render time — sanitising by never letting markup through in the first
+ * place rather than by trying to filter it afterwards.
+ */
+export function normalizeSteamPost(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const title = String(pick(raw, ['title'], '')).trim();
+  const content = String(pick(raw, ['content', 'body', 'message'], ''));
+  if (!title && !content) return null;
+  return {
+    id: String(pick(raw, ['id', 'gid'], title)),
+    title: title || 'Untitled',
+    url: safeUrl(pick(raw, ['url'])),
+    author: String(pick(raw, ['author'], '')).trim(),
+    published: toEpoch(pick(raw, ['publishedAt', 'published', 'date'])),
+    content: stripSteamMarkup(content),
+  };
+}
+
+/**
+ * Only http(s) links survive. An href is the one place a feed could smuggle
+ * `javascript:` into the page.
+ */
+function safeUrl(value) {
+  if (!value) return null;
+  const text = String(value).trim();
+  return /^https?:\/\//i.test(text) ? text : null;
+}
+
+/**
+ * Steam markup to plain text: drop the tags, keep the structure that survives
+ * as line breaks and bullets.
+ */
+export function stripSteamMarkup(text) {
+  return String(text ?? '')
+    .replace(/\[\/?(?:b|i|u|h1|h2|h3|strike|spoiler|noparse|code|quote)\]/gi, '')
+    .replace(/\[url=[^\]]*\]/gi, '')
+    .replace(/\[\/url\]/gi, '')
+    .replace(/\[img\][^\[]*\[\/img\]/gi, '')
+    .replace(/\[\*\]\s*/g, '\n• ')
+    .replace(/\[\/?list[^\]]*\]/gi, '\n')
+    .replace(/\[hr\]\[\/hr\]|\[hr\]/gi, '\n———\n')
+    // Anything left in brackets is markup we do not know; drop the tag, keep text.
+    .replace(/\[[^\]]{1,40}\]/g, '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 /* --------------------------------------------------------------------- war */
 
 export function normalizeWar(raw) {

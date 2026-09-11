@@ -41,6 +41,8 @@ export const ENDPOINTS = {
   planetEvents: { path: '/api/v1/planet-events', ttl: 45_000  },
   assignments:  { path: '/api/v1/assignments',   ttl: 120_000 },
   dispatches:   { path: '/api/v1/dispatches',    ttl: 120_000 },
+  // Patch notes. Changes a few times a month, so a long TTL is plenty.
+  steam:        { path: '/api/v1/steam',         ttl: 900_000 },
 };
 
 /**
@@ -71,6 +73,7 @@ export const MOCK_SPACING = 40;
  */
 export const REFRESH_ORDER = [
   'assignments', 'planets', 'war', 'campaigns', 'planetEvents', 'dispatches',
+  'steam',
 ];
 
 /** Network retry policy for transient failures (never applied to 4xx). */
